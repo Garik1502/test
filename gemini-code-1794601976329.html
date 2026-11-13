@@ -1,0 +1,586 @@
+<!DOCTYPE html>
+<html lang="de">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no" />
+  <title>BKG WFS-Dienst: Welterbestätten & POI-Radar</title>
+
+  <!-- Leaflet CSS -->
+  <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" crossorigin="" />
+  <!-- Leaflet LocateControl CSS -->
+  <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/leaflet.locatecontrol@0.79.0/dist/L.Control.Locate.min.css" />
+
+  <style>
+    :root {
+      --primary: #1d4ed8;
+      --primary-light: #eff6ff;
+      --accent: #0f172a;
+      --text-main: #1e293b;
+      --text-muted: #64748b;
+      --bg-panel: #ffffff;
+      --border-color: #e2e8f0;
+      --shadow: 0 -4px 20px rgba(15, 23, 42, 0.12);
+      --success: #16a34a;
+    }
+
+    * {
+      box-sizing: border-box;
+      margin: 0;
+      padding: 0;
+    }
+
+    html, body {
+      height: 100%;
+      width: 100%;
+      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+      color: var(--text-main);
+      background-color: #f8fafc;
+      overflow: hidden;
+    }
+
+    .app-container {
+      display: flex;
+      flex-direction: column;
+      height: 100dvh;
+      width: 100%;
+    }
+
+    #map {
+      flex: 1 1 auto;
+      width: 100%;
+      z-index: 1;
+    }
+
+    /* Unteres Info-Panel */
+    .info-panel {
+      flex: 0 0 auto;
+      background: var(--bg-panel);
+      border-top: 1px solid var(--border-color);
+      box-shadow: var(--shadow);
+      padding: 16px 20px;
+      z-index: 1000;
+      display: flex;
+      flex-direction: column;
+      gap: 12px;
+    }
+
+    .panel-header {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      font-size: 0.78rem;
+      text-transform: uppercase;
+      letter-spacing: 0.05em;
+      color: var(--text-muted);
+      font-weight: 600;
+    }
+
+    .status-badge {
+      display: inline-flex;
+      align-items: center;
+      gap: 6px;
+      padding: 3px 10px;
+      border-radius: 999px;
+      background: #f1f5f9;
+      color: var(--text-muted);
+      font-size: 0.75rem;
+      font-weight: 600;
+      text-transform: none;
+      letter-spacing: normal;
+    }
+
+    .status-badge.active {
+      background: #dcfce7;
+      color: #166534;
+    }
+
+    .status-dot {
+      width: 8px;
+      height: 8px;
+      border-radius: 50%;
+      background: #94a3b8;
+    }
+
+    .status-badge.active .status-dot {
+      background: #22c55e;
+      box-shadow: 0 0 0 3px rgba(34, 197, 94, 0.25);
+    }
+
+    .poi-content {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      gap: 16px;
+    }
+
+    .poi-details {
+      min-width: 0;
+      flex: 1;
+    }
+
+    /* Interaktiver Name im Panel */
+    .poi-title-btn {
+      background: none;
+      border: none;
+      font-size: 1.15rem;
+      font-weight: 700;
+      color: var(--primary);
+      text-align: left;
+      cursor: pointer;
+      padding: 0;
+      white-space: nowrap;
+      overflow: hidden;
+      text-overflow: ellipsis;
+      width: 100%;
+      display: block;
+      margin-bottom: 2px;
+      transition: color 0.15s ease;
+    }
+
+    .poi-title-btn:hover {
+      color: #1e40af;
+      text-decoration: underline;
+    }
+
+    .poi-title-btn.visited {
+      text-decoration: line-through;
+      color: var(--text-muted);
+    }
+
+    .poi-subtitle {
+      font-size: 0.875rem;
+      color: var(--text-muted);
+      white-space: nowrap;
+      overflow: hidden;
+      text-overflow: ellipsis;
+    }
+
+    .distance-box {
+      flex: 0 0 auto;
+      background: var(--primary-light);
+      border: 1px solid #bfdbfe;
+      color: var(--primary);
+      padding: 10px 14px;
+      border-radius: 12px;
+      text-align: right;
+      min-width: 105px;
+    }
+
+    .distance-value {
+      font-size: 1.25rem;
+      font-weight: 800;
+      line-height: 1.1;
+      font-variant-numeric: tabular-nums;
+    }
+
+    .distance-label {
+      font-size: 0.7rem;
+      font-weight: 600;
+      text-transform: uppercase;
+      opacity: 0.8;
+      margin-top: 2px;
+    }
+
+    /* Checkbox Bereich */
+    .panel-footer-row {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      border-top: 1px solid var(--border-color);
+      padding-top: 8px;
+      font-size: 0.85rem;
+    }
+
+    .visited-checkbox-label {
+      display: inline-flex;
+      align-items: center;
+      gap: 8px;
+      cursor: pointer;
+      font-weight: 600;
+      color: var(--text-main);
+      user-select: none;
+    }
+
+    .visited-checkbox-label input[type="checkbox"] {
+      width: 16px;
+      height: 16px;
+      accent-color: var(--success);
+      cursor: pointer;
+    }
+
+    /* Marker Styling */
+    .poi-marker-pin {
+      background-color: var(--primary);
+      border: 2.5px solid #ffffff;
+      border-radius: 50%;
+      box-shadow: 0 2px 6px rgba(0, 0, 0, 0.35);
+      transition: transform 0.2s ease, background-color 0.2s ease;
+    }
+
+    .poi-marker-pin.nearest {
+      background-color: #dc2626;
+      transform: scale(1.35);
+      z-index: 999 !important;
+    }
+
+    .poi-marker-pin.visited-marker {
+      background-color: var(--success);
+    }
+
+    /* Popup Banner Styling */
+    .leaflet-popup-content {
+      font-size: 0.9rem;
+      line-height: 1.45;
+      margin: 12px 14px;
+      min-width: 220px;
+    }
+    .popup-title {
+      font-weight: 700;
+      font-size: 1.05rem;
+      color: var(--accent);
+      margin-bottom: 6px;
+    }
+    .popup-meta {
+      color: var(--text-muted);
+      font-size: 0.82rem;
+      margin-bottom: 4px;
+    }
+    .popup-actions {
+      display: flex;
+      flex-direction: column;
+      gap: 8px;
+      margin-top: 10px;
+      padding-top: 8px;
+      border-top: 1px solid var(--border-color);
+    }
+    .popup-link, .map-nav-btn {
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      gap: 6px;
+      background: #f1f5f9;
+      color: var(--text-main);
+      padding: 6px 10px;
+      border-radius: 8px;
+      font-size: 0.8rem;
+      font-weight: 600;
+      text-decoration: none;
+      transition: background 0.15s ease;
+    }
+    .popup-link:hover, .map-nav-btn:hover {
+      background: #e2e8f0;
+    }
+    .map-nav-btn {
+      background: var(--primary-light);
+      color: var(--primary);
+    }
+    .map-nav-btn:hover {
+      background: #dbeafe;
+    }
+
+    @media (min-width: 768px) {
+      .info-panel {
+        position: fixed;
+        bottom: 24px;
+        left: 50%;
+        transform: translateX(-50%);
+        width: 90%;
+        max-width: 640px;
+        border-radius: 16px;
+        border: 1px solid var(--border-color);
+        box-shadow: 0 10px 30px rgba(15, 23, 42, 0.16);
+        padding: 18px 24px;
+      }
+    }
+  </style>
+</head>
+<body>
+
+  <div class="app-container">
+    <div id="map"></div>
+
+    <section class="info-panel" aria-live="polite">
+      <div class="panel-header">
+        <span>Nächstgelegenes Welterbe (Radar)</span>
+        <span id="gps-status" class="status-badge">
+          <span class="status-dot"></span>
+          <span id="gps-status-text">GPS inaktiv</span>
+        </span>
+      </div>
+
+      <div class="poi-content">
+        <div class="poi-details">
+          <!-- Interaktiver Name -->
+          <button id="nearest-name-btn" class="poi-title-btn" title="Klicken, um zum POI zu zoomen">Standort wird ermittelt…</button>
+          <div id="nearest-meta" class="poi-subtitle">Verbindung zum WFS-Dienst läuft</div>
+        </div>
+
+        <div class="distance-box">
+          <div id="nearest-distance" class="distance-value">–</div>
+          <div class="distance-label">Luftlinie</div>
+        </div>
+      </div>
+
+      <div class="panel-footer-row">
+        <label class="visited-checkbox-label">
+          <input type="checkbox" id="nearest-visited-checkbox" />
+          <span>Als besucht markieren</span>
+        </label>
+        <span id="visited-status-badge" style="font-size: 0.75rem; color: var(--success); font-weight: 600; display: none;">✓ Besucht</span>
+      </div>
+    </section>
+  </div>
+
+  <!-- Leaflet JS -->
+  <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js" crossorigin=""></script>
+  <!-- Leaflet LocateControl JS -->
+  <script src="https://cdn.jsdelivr.net/npm/leaflet.locatecontrol@0.79.0/dist/L.Control.Locate.min.js"></script>
+
+  <script>
+    const STORAGE_KEY = "bkg_welterbe_visited_v1";
+    let visitedStore = JSON.parse(localStorage.getItem(STORAGE_KEY)) || {};
+
+    const map = L.map("map").setView([51.1657, 10.4515], 6);
+
+    L.tileLayer("https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png", {
+      maxZoom: 19,
+      attribution: '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> | BKG WFS POI-Open'
+    }).addTo(map);
+
+    let poiList = [];
+    let nearestLine = null;
+    let currentNearestMarker = null;
+    let currentNearestPoi = null;
+
+    function calculateHaversineDistance(lat1, lon1, lat2, lon2) {
+      const R = 6371000;
+      const toRad = (deg) => (deg * Math.PI) / 180;
+      const dLat = toRad(lat2 - lat1);
+      const dLon = toRad(lon2 - lon1);
+      const a =
+        Math.sin(dLat / 2) * Math.sin(dLat / 2) +
+        Math.cos(toRad(lat1)) * Math.cos(toRad(lat2)) *
+        Math.sin(dLon / 2) * Math.sin(dLon / 2);
+      return R * 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
+    }
+
+    function formatDistance(meters) {
+      if (meters < 1000) return `${Math.round(meters)} m`;
+      return `${(meters / 1000).toFixed(2).replace(".", ",")} km`;
+    }
+
+    function getPoiId(poi) {
+      return `${poi.name}_${poi.lat}_${poi.lon}`;
+    }
+
+    function createPoiIcon(isNearest = false, isVisited = false) {
+      const size = isNearest ? 16 : 12;
+      let className = "poi-marker-pin";
+      if (isNearest) className += " nearest";
+      if (isVisited) className += " visited-marker";
+
+      return L.divIcon({
+        className: className,
+        iconSize: [size, size],
+        iconAnchor: [size / 2, size / 2],
+        popupAnchor: [0, -size / 2]
+      });
+    }
+
+    // WFS-Dienst laden
+    async function loadWfsData() {
+      const wfsUrl = "https://sgx.geodatenzentrum.de/wfs_poi_open?" + new URLSearchParams({
+        service: "WFS",
+        version: "2.0.0",
+        request: "GetFeature",
+        typeName: "welterbe",
+        outputFormat: "application/json",
+        srsName: "EPSG:4326"
+      });
+
+      try {
+        const response = await fetch(wfsUrl);
+        if (!response.ok) throw new Error(`WFS-Fehler: ${response.status}`);
+        const data = await response.json();
+
+        const poiLayerGroup = L.featureGroup().addTo(map);
+
+        data.features.forEach((feature) => {
+          if (!feature.geometry || feature.geometry.type !== "Point") return;
+
+          const [lon, lat] = feature.geometry.coordinates;
+          const props = feature.properties || {};
+
+          const name = props.name || props.NAME || props.bezeichnung || "Welterbestätte";
+          const welterbe = props.welterbe || props.WELTERBE || name;
+          const ort = [props.plz, props.ort].filter(Boolean).join(" ");
+          const website = props.website || props.WEBSITE || props.url || null;
+
+          const poiObj = { name, welterbe, ort, website, lat, lon };
+          const poiId = getPoiId(poiObj);
+          const isVisited = !!visitedStore[poiId];
+
+          // HTML für Popup-Banner
+          const popupContent = document.createElement("div");
+          popupContent.innerHTML = `
+            <div class="popup-title">${name}</div>
+            ${welterbe ? `<div class="popup-meta"><strong>Welterbe:</strong> ${welterbe}</div>` : ""}
+            ${ort ? `<div class="popup-meta"><strong>Ort:</strong> ${ort}</div>` : ""}
+            <div class="popup-actions">
+              ${website ? `<a class="popup-link" href="${website}" target="_blank" rel="noopener">Offizielle Website öffnen &rarr;</a>` : ""}
+              <a class="map-nav-btn" href="https://www.google.com/maps/search/?api=1&query=${lat},${lon}" target="_blank" rel="noopener">In Google Maps öffnen &nearr;</a>
+              <label style="display: flex; align-items: center; gap: 6px; font-size: 0.8rem; margin-top: 4px; cursor: pointer;">
+                <input type="checkbox" class="popup-visited-cb" ${isVisited ? "checked" : ""} />
+                <span>Besucht</span>
+              </label>
+            </div>
+          `;
+
+          // Checkbox-Event im Popup synchronisieren
+          const cb = popupContent.querySelector(".popup-visited-cb");
+          cb.addEventListener("change", (e) => {
+            setPoiVisited(poiObj, e.target.checked);
+          });
+
+          const marker = L.marker([lat, lon], { icon: createPoiIcon(false, isVisited) })
+            .bindPopup(popupContent)
+            .addTo(poiLayerGroup);
+
+          poiObj.marker = marker;
+          poiList.push(poiObj);
+        });
+
+        if (poiList.length > 0) {
+          map.fitBounds(poiLayerGroup.getBounds(), { padding: [30, 30] });
+        }
+      } catch (error) {
+        console.error("Fehler beim Laden des WFS-Dienstes:", error);
+        document.getElementById("nearest-name-btn").textContent = "Fehler beim Laden der Daten";
+      }
+    }
+
+    // Besucht-Status für einen POI aktualisieren
+    function setPoiVisited(poi, isVisited) {
+      const poiId = getPoiId(poi);
+      if (isVisited) {
+        visitedStore[poiId] = true;
+      } else {
+        delete visitedStore[poiId];
+      }
+      localStorage.setItem(STORAGE_KEY, JSON.stringify(visitedStore));
+
+      // Marker-Icon aktualisieren
+      const isCurrentNearest = (currentNearestPoi && getPoiId(currentNearestPoi) === poiId);
+      poi.marker.setIcon(createPoiIcon(isCurrentNearest, isVisited));
+
+      // UI im unteren Panel aktualisieren, falls es sich um den nächsten POI handelt
+      if (isCurrentNearest) {
+        updatePanelVisitedState(isVisited);
+      }
+    }
+
+    function updatePanelVisitedState(isVisited) {
+      const nameBtn = document.getElementById("nearest-name-btn");
+      const checkbox = document.getElementById("nearest-visited-checkbox");
+      const badge = document.getElementById("visited-status-badge");
+
+      checkbox.checked = isVisited;
+      if (isVisited) {
+        nameBtn.classList.add("visited");
+        badge.style.display = "inline";
+      } else {
+        nameBtn.classList.remove("visited");
+        badge.style.display = "none";
+      }
+    }
+
+    // Nächstgelegenen POI berechnen und UI füttern
+    function updateNearestPOI(userLat, userLon) {
+      if (poiList.length === 0) return;
+
+      let closestPoi = null;
+      let minDistance = Infinity;
+
+      for (const poi of poiList) {
+        const dist = calculateHaversineDistance(userLat, userLon, poi.lat, poi.lon);
+        if (dist < minDistance) {
+          minDistance = dist;
+          closestPoi = poi;
+        }
+      }
+
+      if (!closestPoi) return;
+      currentNearestPoi = closestPoi;
+
+      // Panel-Daten setzen
+      const nameBtn = document.getElementById("nearest-name-btn");
+      nameBtn.textContent = closestPoi.name;
+
+      const subParts = [closestPoi.ort, closestPoi.welterbe].filter(Boolean);
+      document.getElementById("nearest-meta").textContent = subParts.length > 0 ? subParts.join(" • ") : "UNESCO-Welterbe";
+      document.getElementById("nearest-distance").textContent = formatDistance(minDistance);
+
+      const isVisited = !!visitedStore[getPoiId(closestPoi)];
+      updatePanelVisitedState(isVisited);
+
+      // Marker hervorheben
+      if (currentNearestMarker && currentNearestMarker !== closestPoi.marker) {
+        const prevPoi = poiList.find(p => p.marker === currentNearestMarker);
+        const prevVisited = prevPoi ? !!visitedStore[getPoiId(prevPoi)] : false;
+        currentNearestMarker.setIcon(createPoiIcon(false, prevVisited));
+      }
+      closestPoi.marker.setIcon(createPoiIcon(true, isVisited));
+      currentNearestMarker = closestPoi.marker;
+
+      // Luftlinie zeichnen
+      if (nearestLine) map.removeLayer(nearestLine);
+      nearestLine = L.polyline(
+        [[userLat, userLon], [closestPoi.lat, closestPoi.lon]],
+        { color: "#dc2626", weight: 2.5, dashArray: "6, 8", opacity: 0.85 }
+      ).addTo(map);
+    }
+
+    // Interaktiver Name klickbar: Smooth Zoom & Popup öffnen
+    document.getElementById("nearest-name-btn").addEventListener("click", () => {
+      if (!currentNearestPoi) return;
+      map.flyTo([currentNearestPoi.lat, currentNearestPoi.lon], 16, {
+        animate: true,
+        duration: 1.2
+      });
+      currentNearestPoi.marker.openPopup();
+    });
+
+    // Checkbox im Panel verknüpfen
+    document.getElementById("nearest-visited-checkbox").addEventListener("change", (e) => {
+      if (!currentNearestPoi) return;
+      setPoiVisited(currentNearestPoi, e.target.checked);
+    });
+
+    const locateControl = L.control.locate({
+      position: "topleft",
+      flyTo: true,
+      keepCurrentZoomLevel: false,
+      initialZoomLevel: 13,
+      watch: true,
+      enableHighAccuracy: true,
+      strings: { title: "Meinen Standort anzeigen" }
+    }).addTo(map);
+
+    map.on("locationfound", (e) => {
+      document.getElementById("gps-status").classList.add("active");
+      document.getElementById("gps-status-text").textContent = `GPS aktiv (±${Math.round(e.accuracy)} m)`;
+      updateNearestPOI(e.latlng.lat, e.latlng.lng);
+    });
+
+    map.on("locationerror", () => {
+      document.getElementById("gps-status").classList.remove("active");
+      document.getElementById("gps-status-text").textContent = "Kein GPS-Signal";
+    });
+
+    // Initialisierung starten
+    loadWfsData().then(() => {
+      locateControl.start();
+    });
+  </script>
+</body>
+</html>
