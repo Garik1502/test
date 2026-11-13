@@ -353,14 +353,37 @@
 
 
 
-      var map = L.map('map', {
-         minZoom: 6,
-         maxZoom: 18,
-      });
-      var gl = L.maplibreGL({
-         style: 'https://sgx.geodatenzentrum.de/gdz_basemapde_vektor/styles/bm_web_col.json',
-      }).addTo(map);
-      map.setView([51, 10], 6);
+var map = L.map('map', {
+   minZoom: 6,
+   maxZoom: 18,
+}).setView([51, 10], 6);
+
+// Vektor-Stile von BKG definieren
+var topographicLayer = L.maplibreGL({
+   style: 'https://sgx.geodatenzentrum.de/gdz_basemapde_vektor/styles/bm_web_top.json',
+});
+
+var colorfulLayer = L.maplibreGL({
+   style: 'https://sgx.geodatenzentrum.de/gdz_basemapde_vektor/styles/bm_web_col.json',
+});
+
+// Standardmäßig die topografische Karte beim Start laden
+topographicLayer.addTo(map);
+
+// Auswahl-Objekt für das Control-Menü
+var baseMaps = {
+  "Topographisch": topographicLayer,
+  "Farbig (Color)": colorfulLayer
+};
+
+// Layer-Control (Auswahl-Menü) oben rechts zur Karte hinzufügen
+L.control.layers(baseMaps, null, {
+  position: 'topright',
+  collapsed: false // false = direkt sichtbar, true = als Dropdown
+}).addTo(map);
+
+
+    
     
     let poiList = [];
     let nearestLine = null;
