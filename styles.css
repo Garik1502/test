@@ -1,0 +1,214 @@
+
+    :root {
+      --primary: #1d4ed8;
+      --primary-light: #eff6ff;
+      --accent: #0f172a;
+      --text-main: #1e293b;
+      --text-muted: #64748b;
+      --bg-panel: #ffffff;
+      --border-color: #e2e8f0;
+      --shadow: 0 -4px 20px rgba(15, 23, 42, 0.12);
+    }
+
+    * {
+      box-sizing: border-box;
+      margin: 0;
+      padding: 0;
+    }
+
+    html, body {
+      height: 100%;
+      width: 100%;
+      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+      color: var(--text-main);
+      background-color: #f8fafc;
+      overflow: hidden;
+    }
+
+    /* Flex-Container für Vollbild-Karte oben + festes Info-Panel unten */
+    .app-container {
+      display: flex;
+      flex-direction: column;
+      height: 100dvh; /* Dynamische Viewport-Höhe für mobile Browser */
+      width: 100%;
+    }
+
+    #map {
+      flex: 1 1 auto;
+      width: 100%;
+      z-index: 1;
+    }
+
+    /* Unteres Info-Panel */
+    .info-panel {
+      flex: 0 0 auto;
+      background: var(--bg-panel);
+      border-top: 1px solid var(--border-color);
+      box-shadow: var(--shadow);
+      padding: 16px 20px;
+      z-index: 1000;
+      display: flex;
+      flex-direction: column;
+      gap: 10px;
+    }
+
+    .panel-header {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      font-size: 0.78rem;
+      text-transform: uppercase;
+      letter-spacing: 0.05em;
+      color: var(--text-muted);
+      font-weight: 600;
+    }
+
+    .status-badge {
+      display: inline-flex;
+      align-items: center;
+      gap: 6px;
+      padding: 3px 10px;
+      border-radius: 999px;
+      background: #f1f5f9;
+      color: var(--text-muted);
+      font-size: 0.75rem;
+      font-weight: 600;
+      text-transform: none;
+      letter-spacing: normal;
+    }
+
+    .status-badge.active {
+      background: #dcfce7;
+      color: #166534;
+    }
+
+    .status-dot {
+      width: 8px;
+      height: 8px;
+      border-radius: 50%;
+      background: #94a3b8;
+    }
+
+    .status-badge.active .status-dot {
+      background: #22c55e;
+      box-shadow: 0 0 0 3px rgba(34, 197, 94, 0.25);
+    }
+
+    .poi-content {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      gap: 16px;
+    }
+
+    .poi-details {
+      min-width: 0; /* Ermöglicht Text-Truncation */
+      flex: 1;
+    }
+
+    .poi-title {
+      font-size: 1.15rem;
+      font-weight: 700;
+      color: var(--accent);
+      white-space: nowrap;
+      overflow: hidden;
+      text-overflow: ellipsis;
+      margin-bottom: 2px;
+    }
+
+    .poi-subtitle {
+      font-size: 0.875rem;
+      color: var(--text-muted);
+      white-space: nowrap;
+      overflow: hidden;
+      text-overflow: ellipsis;
+    }
+
+    .distance-box {
+      flex: 0 0 auto;
+      background: var(--primary-light);
+      border: 1px solid #bfdbfe;
+      color: var(--primary);
+      padding: 10px 14px;
+      border-radius: 12px;
+      text-align: right;
+      min-width: 105px;
+    }
+
+    .distance-value {
+      font-size: 1.25rem;
+      font-weight: 800;
+      line-height: 1.1;
+      font-variant-numeric: tabular-nums;
+    }
+
+    .distance-label {
+      font-size: 0.7rem;
+      font-weight: 600;
+      text-transform: uppercase;
+      opacity: 0.8;
+      margin-top: 2px;
+    }
+
+    /* Custom Marker Styling */
+    .poi-marker-pin {
+      background-color: var(--primary);
+      border: 2.5px solid #ffffff;
+      border-radius: 50%;
+      box-shadow: 0 2px 6px rgba(0, 0, 0, 0.35);
+      transition: transform 0.2s ease, background-color 0.2s ease;
+    }
+
+    .poi-marker-pin.nearest {
+      background-color: #dc2626;
+      transform: scale(1.35);
+      z-index: 999 !important;
+    }
+
+    /* Popup Styling */
+    .leaflet-popup-content {
+      font-size: 0.9rem;
+      line-height: 1.45;
+      margin: 12px 14px;
+    }
+    .popup-title {
+      font-weight: 700;
+      font-size: 1rem;
+      color: var(--accent);
+      margin-bottom: 4px;
+    }
+    .popup-meta {
+      color: var(--text-muted);
+      font-size: 0.82rem;
+      margin-bottom: 6px;
+    }
+    .popup-link {
+      display: inline-block;
+      margin-top: 6px;
+      color: var(--primary);
+      font-weight: 600;
+      text-decoration: none;
+    }
+    .popup-link:hover {
+      text-decoration: underline;
+    }
+
+    /* Desktop-Optimierung: Panel als schwebende Karte unten mittig */
+    @media (min-width: 768px) {
+      .info-panel {
+        position: fixed;
+        bottom: 24px;
+        left: 50%;
+        transform: translateX(-50%);
+        width: 90%;
+        max-width: 640px;
+        border-radius: 16px;
+        border: 1px solid var(--border-color);
+        box-shadow: 0 10px 30px rgba(15, 23, 42, 0.16);
+        padding: 18px 24px;
+      }
+
+      .poi-title {
+        font-size: 1.25rem;
+      }
+    }
