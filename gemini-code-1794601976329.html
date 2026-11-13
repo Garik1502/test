@@ -355,7 +355,7 @@
 
 var map = L.map('map', {
    minZoom: 6,
-   maxZoom: 18,
+   maxZoom: 15,
 }).setView([51, 10], 6);
 
 // Vektor-Stile von BKG definieren
@@ -363,23 +363,28 @@ var topographicLayer = L.maplibreGL({
    style: 'https://sgx.geodatenzentrum.de/gdz_basemapde_vektor/styles/bm_web_top.json',
 });
 
-var colorfulLayer = L.maplibreGL({
-   style: 'https://sgx.geodatenzentrum.de/gdz_basemapde_vektor/styles/bm_web_col.json',
+var hellLayer = L.maplibreGL({
+   style: 'https://sgx.geodatenzentrum.de/gdz_basemapde_vektor/styles/bm_web_hell.json',
+});
+
+var dunkelLayer = L.maplibreGL({
+   style: 'https://sgx.geodatenzentrum.de/gdz_basemapde_vektor/styles/bm_web_drk.json',
 });
 
 // Standardmäßig die topografische Karte beim Start laden
-topographicLayer.addTo(map);
+hellLayer.addTo(map);
 
 // Auswahl-Objekt für das Control-Menü
 var baseMaps = {
   "Topographisch": topographicLayer,
-  "Farbig (Color)": colorfulLayer
+  "Dunkel": dunkelLayer,
+  "Hell": hellLayer
 };
 
 // Layer-Control (Auswahl-Menü) oben rechts zur Karte hinzufügen
 L.control.layers(baseMaps, null, {
   position: 'topright',
-  collapsed: false // false = direkt sichtbar, true = als Dropdown
+  collapsed: true // false = direkt sichtbar, true = als Dropdown
 }).addTo(map);
 
 
