@@ -338,6 +338,10 @@
   <!-- Proj4js für Koordinatentransformation (EPSG:25832 -> WGS84) -->
   <script src="https://cdnjs.cloudflare.com/ajax/libs/proj4js/2.11.0/proj4.js"></script>
 
+  <script src="https://unpkg.com/maplibre-gl@2.4.0/dist/maplibre-gl.js"></script>
+  <script src="https://unpkg.com/@maplibre/maplibre-gl-leaflet@0.0.17/leaflet-maplibre-gl.js"></script>
+
+  
   <script>
     // 1. Koordinatensystem EPSG:25832 definieren
     proj4.defs("EPSG:25832", "+proj=utm +zone=32 +ellps=GRS80 +towgs84=0,0,0,0,0,0,0 +units=m +no_defs +type=crs");
@@ -345,13 +349,19 @@
     const STORAGE_KEY = "tourismus_pois_visited_v1";
     let visitedStore = JSON.parse(localStorage.getItem(STORAGE_KEY)) || {};
 
-    const map = L.map("map").setView([51.1657, 10.4515], 6);
 
-    L.tileLayer("https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png", {
-      maxZoom: 19,
-      attribution: '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a>'
-    }).addTo(map);
 
+
+
+      var map = L.map('map', {
+         minZoom: 6,
+         maxZoom: 18,
+      });
+      var gl = L.maplibreGL({
+         style: 'https://sgx.geodatenzentrum.de/gdz_basemapde_vektor/styles/bm_web_col.json',
+      }).addTo(map);
+      map.setView([51, 10], 6);
+    
     let poiList = [];
     let nearestLine = null;
     let currentNearestMarker = null;
