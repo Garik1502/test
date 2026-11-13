@@ -388,15 +388,52 @@
     }
 
     // WFS-Dienst laden
-    async function loadWfsData() {
-      const wfsUrl = "https://sgx.geodatenzentrum.de/wfs_poi_open?" + new URLSearchParams({
-        service: "WFS",
-        version: "2.0.0",
-        request: "GetFeature",
-        typeName: "welterbe",
-        outputFormat: "application/json",
-        srsName: "EPSG:4326"
-      });
+    // 4. GeoJSON-Daten laden
+    async function loadGeoJsonData() {
+      try {
+        const response = await fetch("pois.geojson");
+        if (!response.ok) throw new Error(`HTTP-Fehler: ${response.status}`);
+        const geojsonData = await response.json();
+
+        const poiLayerGroup = L.featureGroup().addTo(map);
+
+        geojsonData.features.forEach((feature) => {
+          if (!feature.geometry || feature.geometry.type !== "Point") return;
+
+          const { lat, lon } = toWGS84(feature.geometry.coordinates);
+          const props = feature.properties || {};
+
+          // Passende Felder aus deinem Datensatz auslesen
+          const name = props.Name_ReprO || props.Name_Bestt || props.name || "Unbekannter POI";
+          const welterbe = props.Name_WeltE || "";
+          const ort = [props.PLZ, props.Ort].filter(Boolean).join(" ");
+          const typ = props.Typ || props.Art || "";
+          const homepage = props.Homepage
+            ? (props.Homepage.startsWith("http") ? props.Homepage : `https://${props.Homepage}`)
+            : null;
+
+          // Popup-Inhalt zusammenbauen
+          const popupHtml = `
+            <div class="popup-title">${name}</div>
+            ${welterbe && welterbe !== name ? `<div class="popup-meta"><strong>Welterbe:</strong> ${welterbe}</div>` : ""}
+            ${ort ? `<div class="popup-meta"><strong>Ort:</strong> ${ort}</div>` : ""}
+            ${typ ? `<div class="popup-meta"><strong>Kategorie:</strong> ${typ}</div>` : ""}
+            ${homepage ? `<a class="popup-link" href="${homepage}" target="_blank" rel="noopener">Website öffnen &rarr;</a>` : ""}
+          `;
+
+          const marker = L.marker([lat, lon], { icon: createPoiIcon(false) })
+            .bindPopup(popupHtml)
+            .addTo(poiLayerGroup);
+
+          poiList.push({
+            name,
+            welterbe,
+            ort,
+            lat,
+            lon,
+            marker
+          });
+        });
 
       try {
         const response = await fetch(wfsUrl);
