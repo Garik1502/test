@@ -1,16 +1,501 @@
 <!DOCTYPE html>
-<html lang="ru">
+<html lang="de">
 <head>
-    <meta charset="UTF-8">
-    <title>Тест карты Telegram</title>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no" />
+  <title>UNESCO-Welterbe & Tourismus-Radar</title>
+
+  <!-- Leaflet CSS -->
+  <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" crossorigin="" />
+  <!-- Leaflet LocateControl CSS -->
+  <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/leaflet.locatecontrol@0.79.0/dist/L.Control.Locate.min.css" />
+
+  <style>
+    :root {
+      --primary: #1d4ed8;
+      --primary-light: #eff6ff;
+      --accent: #0f172a;
+      --text-main: #1e293b;
+      --text-muted: #64748b;
+      --bg-panel: #ffffff;
+      --border-color: #e2e8f0;
+      --shadow: 0 -4px 20px rgba(15, 23, 42, 0.12);
+    }
+
+    * {
+      box-sizing: border-box;
+      margin: 0;
+      padding: 0;
+    }
+
+    html, body {
+      height: 100%;
+      width: 100%;
+      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+      color: var(--text-main);
+      background-color: #f8fafc;
+      overflow: hidden;
+    }
+
+    /* Flex-Container für Vollbild-Karte oben + festes Info-Panel unten */
+    .app-container {
+      display: flex;
+      flex-direction: column;
+      height: 100dvh; /* Dynamische Viewport-Höhe für mobile Browser */
+      width: 100%;
+    }
+
+    #map {
+      flex: 1 1 auto;
+      width: 100%;
+      z-index: 1;
+    }
+
+    /* Unteres Info-Panel */
+    .info-panel {
+      flex: 0 0 auto;
+      background: var(--bg-panel);
+      border-top: 1px solid var(--border-color);
+      box-shadow: var(--shadow);
+      padding: 16px 20px;
+      z-index: 1000;
+      display: flex;
+      flex-direction: column;
+      gap: 10px;
+    }
+
+    .panel-header {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      font-size: 0.78rem;
+      text-transform: uppercase;
+      letter-spacing: 0.05em;
+      color: var(--text-muted);
+      font-weight: 600;
+    }
+
+    .status-badge {
+      display: inline-flex;
+      align-items: center;
+      gap: 6px;
+      padding: 3px 10px;
+      border-radius: 999px;
+      background: #f1f5f9;
+      color: var(--text-muted);
+      font-size: 0.75rem;
+      font-weight: 600;
+      text-transform: none;
+      letter-spacing: normal;
+    }
+
+    .status-badge.active {
+      background: #dcfce7;
+      color: #166534;
+    }
+
+    .status-dot {
+      width: 8px;
+      height: 8px;
+      border-radius: 50%;
+      background: #94a3b8;
+    }
+
+    .status-badge.active .status-dot {
+      background: #22c55e;
+      box-shadow: 0 0 0 3px rgba(34, 197, 94, 0.25);
+    }
+
+    .poi-content {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      gap: 16px;
+    }
+
+    .poi-details {
+      min-width: 0; /* Ermöglicht Text-Truncation */
+      flex: 1;
+    }
+
+    .poi-title {
+      font-size: 1.15rem;
+      font-weight: 700;
+      color: var(--accent);
+      white-space: nowrap;
+      overflow: hidden;
+      text-overflow: ellipsis;
+      margin-bottom: 2px;
+    }
+
+    .poi-subtitle {
+      font-size: 0.875rem;
+      color: var(--text-muted);
+      white-space: nowrap;
+      overflow: hidden;
+      text-overflow: ellipsis;
+    }
+
+    .distance-box {
+      flex: 0 0 auto;
+      background: var(--primary-light);
+      border: 1px solid #bfdbfe;
+      color: var(--primary);
+      padding: 10px 14px;
+      border-radius: 12px;
+      text-align: right;
+      min-width: 105px;
+    }
+
+    .distance-value {
+      font-size: 1.25rem;
+      font-weight: 800;
+      line-height: 1.1;
+      font-variant-numeric: tabular-nums;
+    }
+
+    .distance-label {
+      font-size: 0.7rem;
+      font-weight: 600;
+      text-transform: uppercase;
+      opacity: 0.8;
+      margin-top: 2px;
+    }
+
+    /* Custom Marker Styling */
+    .poi-marker-pin {
+      background-color: var(--primary);
+      border: 2.5px solid #ffffff;
+      border-radius: 50%;
+      box-shadow: 0 2px 6px rgba(0, 0, 0, 0.35);
+      transition: transform 0.2s ease, background-color 0.2s ease;
+    }
+
+    .poi-marker-pin.nearest {
+      background-color: #dc2626;
+      transform: scale(1.35);
+      z-index: 999 !important;
+    }
+
+    /* Popup Styling */
+    .leaflet-popup-content {
+      font-size: 0.9rem;
+      line-height: 1.45;
+      margin: 12px 14px;
+    }
+    .popup-title {
+      font-weight: 700;
+      font-size: 1rem;
+      color: var(--accent);
+      margin-bottom: 4px;
+    }
+    .popup-meta {
+      color: var(--text-muted);
+      font-size: 0.82rem;
+      margin-bottom: 6px;
+    }
+    .popup-link {
+      display: inline-block;
+      margin-top: 6px;
+      color: var(--primary);
+      font-weight: 600;
+      text-decoration: none;
+    }
+    .popup-link:hover {
+      text-decoration: underline;
+    }
+
+    /* Desktop-Optimierung: Panel als schwebende Karte unten mittig */
+    @media (min-width: 768px) {
+      .info-panel {
+        position: fixed;
+        bottom: 24px;
+        left: 50%;
+        transform: translateX(-50%);
+        width: 90%;
+        max-width: 640px;
+        border-radius: 16px;
+        border: 1px solid var(--border-color);
+        box-shadow: 0 10px 30px rgba(15, 23, 42, 0.16);
+        padding: 18px 24px;
+      }
+
+      .poi-title {
+        font-size: 1.25rem;
+      }
+    }
+  </style>
 </head>
 <body>
-    <h1>Моя тестовая страница</h1>
-    
-    <figure>
-        <tg-map lat="41.9" long="12.5" zoom="14"/>
-        <figcaption>Карта Рима</figcaption>
-    </figure>
 
+  <div class="app-container">
+    <!-- Interaktive Karte -->
+    <div id="map"></div>
+
+    <!-- Unteres Info-Panel -->
+    <section class="info-panel" aria-live="polite">
+      <div class="panel-header">
+        <span>Nächstgelegener Tourismus-POI</span>
+        <span id="gps-status" class="status-badge">
+          <span class="status-dot"></span>
+          <span id="gps-status-text">GPS inaktiv</span>
+        </span>
+      </div>
+
+      <div class="poi-content">
+        <div class="poi-details">
+          <div id="nearest-name" class="poi-title">Standort wird ermittelt …</div>
+          <div id="nearest-meta" class="poi-subtitle">Bitte GPS aktivieren oder Standortfreigabe erlauben</div>
+        </div>
+
+        <div class="distance-box">
+          <div id="nearest-distance" class="distance-value">–</div>
+          <div class="distance-label">Luftlinie</div>
+        </div>
+      </div>
+    </section>
+  </div>
+
+  <!-- Leaflet JS -->
+  <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js" crossorigin=""></script>
+  <!-- Leaflet LocateControl JS -->
+  <script src="https://cdn.jsdelivr.net/npm/leaflet.locatecontrol@0.79.0/dist/L.Control.Locate.min.js"></script>
+  <!-- Proj4js für Koordinatentransformation (EPSG:25832 -> WGS84) -->
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/proj4js/2.11.0/proj4.js"></script>
+
+  <script>
+    // 1. Koordinatensystem EPSG:25832 (ETRS89 / UTM Zone 32N) definieren
+    proj4.defs("EPSG:25832", "+proj=utm +zone=32 +ellps=GRS80 +towgs84=0,0,0,0,0,0,0 +units=m +no_defs +type=crs");
+
+    // 2. Karte initialisieren (Zentrum Deutschland)
+    const map = L.map("map", {
+      zoomControl: true
+    }).setView([51.1657, 10.4515], 6);
+
+    // OpenStreetMap Basiskarte
+    L.tileLayer("https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png", {
+      maxZoom: 19,
+      attribution: '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a>'
+    }).addTo(map);
+
+    // Datenspeicher für geladene POIs und Marker-Referenzen
+    let poiList = [];
+    let nearestLine = null;
+    let currentNearestMarker = null;
+
+    // 3. Haversine-Formel zur Berechnung der Entfernung in Metern
+    function calculateHaversineDistance(lat1, lon1, lat2, lon2) {
+      const R = 6371000; // Erdradius in Metern
+      const toRad = (deg) => (deg * Math.PI) / 180;
+
+      const dLat = toRad(lat2 - lat1);
+      const dLon = toRad(lon2 - lon1);
+      const a =
+        Math.sin(dLat / 2) * Math.sin(dLat / 2) +
+        Math.cos(toRad(lat1)) * Math.cos(toRad(lat2)) *
+        Math.sin(dLon / 2) * Math.sin(dLon / 2);
+
+      const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
+      return R * c;
+    }
+
+    // Entfernung lesbar formatieren (Meter unter 1 km, sonst Kilometer)
+    function formatDistance(meters) {
+      if (meters < 1000) {
+        return `${Math.round(meters)} m`;
+      }
+      return `${(meters / 1000).toFixed(2).replace(".", ",")} km`;
+    }
+
+    // Hilfsfunktion zur Koordinatenumrechnung (erkennt automatisch UTM vs. WGS84)
+    function toWGS84(coords) {
+      const [x, y] = coords;
+      // Werte > 180 deuten auf metrische UTM-Koordinaten (EPSG:25832) hin
+      if (Math.abs(x) > 180 || Math.abs(y) > 90) {
+        const [lon, lat] = proj4("EPSG:25832", "EPSG:4326", [x, y]);
+        return { lat, lon };
+      }
+      return { lat: y, lon: x };
+    }
+
+    // Custom Marker-Icon erstellen
+    function createPoiIcon(isNearest = false) {
+      const size = isNearest ? 16 : 12;
+      return L.divIcon({
+        className: `poi-marker-pin ${isNearest ? "nearest" : ""}`,
+        iconSize: [size, size],
+        iconAnchor: [size / 2, size / 2],
+        popupAnchor: [0, -size / 2]
+      });
+    }
+
+    // 4. GeoJSON-Daten laden
+    async function loadGeoJsonData() {
+      try {
+        const response = await fetch("pois.geojson");
+        if (!response.ok) throw new Error(`HTTP-Fehler: ${response.status}`);
+        const geojsonData = await response.json();
+
+        const poiLayerGroup = L.featureGroup().addTo(map);
+
+        geojsonData.features.forEach((feature) => {
+          if (!feature.geometry || feature.geometry.type !== "Point") return;
+
+          const { lat, lon } = toWGS84(feature.geometry.coordinates);
+          const props = feature.properties || {};
+
+          // Passende Felder aus deinem Datensatz auslesen
+          const name = props.Name_ReprO || props.Name_Bestt || props.name || "Unbekannter POI";
+          const welterbe = props.Name_WeltE || "";
+          const ort = [props.PLZ, props.Ort].filter(Boolean).join(" ");
+          const typ = props.Typ || props.Art || "";
+          const homepage = props.Homepage
+            ? (props.Homepage.startsWith("http") ? props.Homepage : `https://${props.Homepage}`)
+            : null;
+
+          // Popup-Inhalt zusammenbauen
+          const popupHtml = `
+            <div class="popup-title">${name}</div>
+            ${welterbe && welterbe !== name ? `<div class="popup-meta"><strong>Welterbe:</strong> ${welterbe}</div>` : ""}
+            ${ort ? `<div class="popup-meta"><strong>Ort:</strong> ${ort}</div>` : ""}
+            ${typ ? `<div class="popup-meta"><strong>Kategorie:</strong> ${typ}</div>` : ""}
+            ${homepage ? `<a class="popup-link" href="${homepage}" target="_blank" rel="noopener">Website öffnen &rarr;</a>` : ""}
+          `;
+
+          const marker = L.marker([lat, lon], { icon: createPoiIcon(false) })
+            .bindPopup(popupHtml)
+            .addTo(poiLayerGroup);
+
+          poiList.push({
+            name,
+            welterbe,
+            ort,
+            lat,
+            lon,
+            marker
+          });
+        });
+
+        /*
+        // Optional: Zweite lokale GeoJSON-Datei (z. B. Linien/Flächen/Route) laden
+        const secondResponse = await fetch("zweite_datei.geojson");
+        if (secondResponse.ok) {
+          const secondData = await secondResponse.json();
+          L.geoJSON(secondData, {
+            coordsToLatLng: (coords) => {
+              const { lat, lon } = toWGS84(coords);
+              return L.latLng(lat, lon);
+            },
+            style: { color: "#1d4ed8", weight: 3, opacity: 0.7 }
+          }).addTo(map);
+        }
+        */
+
+        // Kartenausschnitt initial auf alle POIs anpassen, falls noch kein GPS aktiv ist
+        if (poiList.length > 0) {
+          map.fitBounds(poiLayerGroup.getBounds(), { padding: [30, 30] });
+        }
+
+      } catch (error) {
+        console.error("Fehler beim Laden der GeoJSON-Datei:", error);
+        document.getElementById("nearest-name").textContent = "pois.geojson nicht geladen";
+        document.getElementById("nearest-meta").textContent = "Bitte Seite über einen lokalen Webserver starten.";
+      }
+    }
+
+    // 5. Nächstgelegenen POI berechnen und UI aktualisieren
+    function updateNearestPOI(userLat, userLon) {
+      if (poiList.length === 0) return;
+
+      let closestPoi = null;
+      let minDistance = Infinity;
+
+      for (const poi of poiList) {
+        const dist = calculateHaversineDistance(userLat, userLon, poi.lat, poi.lon);
+        if (dist < minDistance) {
+          minDistance = dist;
+          closestPoi = poi;
+        }
+      }
+
+      if (!closestPoi) return;
+
+      // Info-Panel aktualisieren
+      document.getElementById("nearest-name").textContent = closestPoi.name;
+
+      const subParts = [closestPoi.ort, closestPoi.welterbe].filter(Boolean);
+      document.getElementById("nearest-meta").textContent =
+        subParts.length > 0 ? subParts.join(" • ") : "UNESCO-Welterbestätte";
+
+      document.getElementById("nearest-distance").textContent = formatDistance(minDistance);
+
+      // Vorherigen Marker zurücksetzen und neuen hervorheben
+      if (currentNearestMarker && currentNearestMarker !== closestPoi.marker) {
+        currentNearestMarker.setIcon(createPoiIcon(false));
+      }
+      closestPoi.marker.setIcon(createPoiIcon(true));
+      currentNearestMarker = closestPoi.marker;
+
+      // Luftlinie zwischen Nutzer und nächstem POI zeichnen
+      if (nearestLine) {
+        map.removeLayer(nearestLine);
+      }
+      nearestLine = L.polyline(
+        [[userLat, userLon], [closestPoi.lat, closestPoi.lon]],
+        {
+          color: "#dc2626",
+          weight: 2.5,
+          dashArray: "6, 8",
+          opacity: 0.85
+        }
+      ).addTo(map);
+    }
+
+    // 6. Live-Geolokalisierung mit Leaflet.LocateControl einrichten
+    const locateControl = L.control.locate({
+      position: "topleft",
+      flyTo: true,
+      keepCurrentZoomLevel: false,
+      initialZoomLevel: 13,
+      watch: true, // Aktualisiert Position laufend (ideal im Zug)
+      enableHighAccuracy: true,
+      strings: {
+        title: "Meinen Standort anzeigen",
+        popup: "Dein aktueller Standort (Genauigkeit: {distance} {unit})"
+      },
+      locateOptions: {
+        enableHighAccuracy: true,
+        maximumAge: 5000,
+        timeout: 10000
+      }
+    }).addTo(map);
+
+    // Event-Listener: Standort gefunden / aktualisiert
+    map.on("locationfound", (e) => {
+      const statusBadge = document.getElementById("gps-status");
+      const statusText = document.getElementById("gps-status-text");
+
+      statusBadge.classList.add("active");
+      statusText.textContent = `GPS aktiv (±${Math.round(e.accuracy)} m)`;
+
+      updateNearestPOI(e.latlng.lat, e.latlng.lng);
+    });
+
+    // Event-Listener: Standortfehler (z. B. verweigert oder kein Signal im Tunnel)
+    map.on("locationerror", (e) => {
+      const statusBadge = document.getElementById("gps-status");
+      const statusText = document.getElementById("gps-status-text");
+
+      statusBadge.classList.remove("active");
+      statusText.textContent = "Kein GPS-Signal";
+      console.warn("Standortfehler:", e.message);
+    });
+
+    // Initialisierung starten
+    loadGeoJsonData().then(() => {
+      // Optional: GPS beim Öffnen der Seite direkt automatisch anfordern
+      locateControl.start();
+    });
+  </script>
 </body>
 </html>
