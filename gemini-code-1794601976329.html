@@ -3,7 +3,7 @@
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no" />
-  <title>BKG WFS-Dienst: Welterbestätten & POI-Radar</title>
+  <title>Tourismus-Radar & POI-Verwaltung</title>
 
   <!-- Leaflet CSS -->
   <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" crossorigin="" />
@@ -181,7 +181,7 @@
       margin-top: 2px;
     }
 
-    /* Checkbox Bereich */
+    /* Checkbox Bereich im Panel */
     .panel-footer-row {
       display: flex;
       align-items: center;
@@ -301,7 +301,7 @@
 
     <section class="info-panel" aria-live="polite">
       <div class="panel-header">
-        <span>Nächstgelegenes Welterbe (Radar)</span>
+        <span>Nächstgelegener Tourismus-POI</span>
         <span id="gps-status" class="status-badge">
           <span class="status-dot"></span>
           <span id="gps-status-text">GPS inaktiv</span>
@@ -312,7 +312,7 @@
         <div class="poi-details">
           <!-- Interaktiver Name -->
           <button id="nearest-name-btn" class="poi-title-btn" title="Klicken, um zum POI zu zoomen">Standort wird ermittelt…</button>
-          <div id="nearest-meta" class="poi-subtitle">Verbindung zum WFS-Dienst läuft</div>
+          <div id="nearest-meta" class="poi-subtitle">Bitte GPS aktivieren oder Standortfreigabe erlauben</div>
         </div>
 
         <div class="distance-box">
@@ -335,16 +335,21 @@
   <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js" crossorigin=""></script>
   <!-- Leaflet LocateControl JS -->
   <script src="https://cdn.jsdelivr.net/npm/leaflet.locatecontrol@0.79.0/dist/L.Control.Locate.min.js"></script>
+  <!-- Proj4js für Koordinatentransformation (EPSG:25832 -> WGS84) -->
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/proj4js/2.11.0/proj4.js"></script>
 
   <script>
-    const STORAGE_KEY = "bkg_welterbe_visited_v1";
+    // 1. Koordinatensystem EPSG:25832 definieren
+    proj4.defs("EPSG:25832", "+proj=utm +zone=32 +ellps=GRS80 +towgs84=0,0,0,0,0,0,0 +units=m +no_defs +type=crs");
+
+    const STORAGE_KEY = "tourismus_pois_visited_v1";
     let visitedStore = JSON.parse(localStorage.getItem(STORAGE_KEY)) || {};
 
     const map = L.map("map").setView([51.1657, 10.4515], 6);
 
     L.tileLayer("https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png", {
       maxZoom: 19,
-      attribution: '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> | BKG WFS POI-Open'
+      attribution: '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a>'
     }).addTo(map);
 
     let poiList = [];
@@ -369,6 +374,15 @@
       return `${(meters / 1000).toFixed(2).replace(".", ",")} km`;
     }
 
+    function toWGS84(coords) {
+      const [x, y] = coords;
+      if (Math.abs(x) > 180 || Math.abs(y) > 90) {
+        const [lon, lat] = proj4("EPSG:25832", "EPSG:4326", [x, y]);
+        return { lat, lon };
+      }
+      return { lat: y, lon: x };
+    }
+
     function getPoiId(poi) {
       return `${poi.name}_${poi.lat}_${poi.lon}`;
     }
@@ -387,8 +401,7 @@
       });
     }
 
-    // WFS-Dienst laden
-    // 4. GeoJSON-Daten laden
+    // 4. GeoJSON-Daten laden (deine Original-Methode)
     async function loadGeoJsonData() {
       try {
         const response = await fetch("pois.geojson");
@@ -403,7 +416,6 @@
           const { lat, lon } = toWGS84(feature.geometry.coordinates);
           const props = feature.properties || {};
 
-          // Passende Felder aus deinem Datensatz auslesen
           const name = props.Name_ReprO || props.Name_Bestt || props.name || "Unbekannter POI";
           const welterbe = props.Name_WeltE || "";
           const ort = [props.PLZ, props.Ort].filter(Boolean).join(" ");
@@ -412,59 +424,19 @@
             ? (props.Homepage.startsWith("http") ? props.Homepage : `https://${props.Homepage}`)
             : null;
 
-          // Popup-Inhalt zusammenbauen
-          const popupHtml = `
+          const poiObj = { name, welterbe, ort, typ, homepage, lat, lon };
+          const poiId = getPoiId(poiObj);
+          const isVisited = !!visitedStore[poiId];
+
+          // Popup-Inhalt mit Website, Google Maps und Checkbox
+          const popupContent = document.createElement("div");
+          popupContent.innerHTML = `
             <div class="popup-title">${name}</div>
             ${welterbe && welterbe !== name ? `<div class="popup-meta"><strong>Welterbe:</strong> ${welterbe}</div>` : ""}
             ${ort ? `<div class="popup-meta"><strong>Ort:</strong> ${ort}</div>` : ""}
             ${typ ? `<div class="popup-meta"><strong>Kategorie:</strong> ${typ}</div>` : ""}
-            ${homepage ? `<a class="popup-link" href="${homepage}" target="_blank" rel="noopener">Website öffnen &rarr;</a>` : ""}
-          `;
-
-          const marker = L.marker([lat, lon], { icon: createPoiIcon(false) })
-            .bindPopup(popupHtml)
-            .addTo(poiLayerGroup);
-
-          poiList.push({
-            name,
-            welterbe,
-            ort,
-            lat,
-            lon,
-            marker
-          });
-        });
-
-      try {
-        const response = await fetch(wfsUrl);
-        if (!response.ok) throw new Error(`WFS-Fehler: ${response.status}`);
-        const data = await response.json();
-
-        const poiLayerGroup = L.featureGroup().addTo(map);
-
-        data.features.forEach((feature) => {
-          if (!feature.geometry || feature.geometry.type !== "Point") return;
-
-          const [lon, lat] = feature.geometry.coordinates;
-          const props = feature.properties || {};
-
-          const name = props.name || props.NAME || props.bezeichnung || "Welterbestätte";
-          const welterbe = props.welterbe || props.WELTERBE || name;
-          const ort = [props.plz, props.ort].filter(Boolean).join(" ");
-          const website = props.website || props.WEBSITE || props.url || null;
-
-          const poiObj = { name, welterbe, ort, website, lat, lon };
-          const poiId = getPoiId(poiObj);
-          const isVisited = !!visitedStore[poiId];
-
-          // HTML für Popup-Banner
-          const popupContent = document.createElement("div");
-          popupContent.innerHTML = `
-            <div class="popup-title">${name}</div>
-            ${welterbe ? `<div class="popup-meta"><strong>Welterbe:</strong> ${welterbe}</div>` : ""}
-            ${ort ? `<div class="popup-meta"><strong>Ort:</strong> ${ort}</div>` : ""}
             <div class="popup-actions">
-              ${website ? `<a class="popup-link" href="${website}" target="_blank" rel="noopener">Offizielle Website öffnen &rarr;</a>` : ""}
+              ${homepage ? `<a class="popup-link" href="${homepage}" target="_blank" rel="noopener">Website öffnen &rarr;</a>` : ""}
               <a class="map-nav-btn" href="https://www.google.com/maps/search/?api=1&query=${lat},${lon}" target="_blank" rel="noopener">In Google Maps öffnen &nearr;</a>
               <label style="display: flex; align-items: center; gap: 6px; font-size: 0.8rem; margin-top: 4px; cursor: pointer;">
                 <input type="checkbox" class="popup-visited-cb" ${isVisited ? "checked" : ""} />
@@ -473,7 +445,7 @@
             </div>
           `;
 
-          // Checkbox-Event im Popup synchronisieren
+          // Checkbox-Event im Popup verknüpfen
           const cb = popupContent.querySelector(".popup-visited-cb");
           cb.addEventListener("change", (e) => {
             setPoiVisited(poiObj, e.target.checked);
@@ -490,13 +462,15 @@
         if (poiList.length > 0) {
           map.fitBounds(poiLayerGroup.getBounds(), { padding: [30, 30] });
         }
+
       } catch (error) {
-        console.error("Fehler beim Laden des WFS-Dienstes:", error);
-        document.getElementById("nearest-name-btn").textContent = "Fehler beim Laden der Daten";
+        console.error("Fehler beim Laden der GeoJSON-Datei:", error);
+        document.getElementById("nearest-name-btn").textContent = "pois.geojson nicht geladen";
+        document.getElementById("nearest-meta").textContent = "Bitte lokalen Webserver starten.";
       }
     }
 
-    // Besucht-Status für einen POI aktualisieren
+    // Besucht-Status speichern
     function setPoiVisited(poi, isVisited) {
       const poiId = getPoiId(poi);
       if (isVisited) {
@@ -506,11 +480,9 @@
       }
       localStorage.setItem(STORAGE_KEY, JSON.stringify(visitedStore));
 
-      // Marker-Icon aktualisieren
       const isCurrentNearest = (currentNearestPoi && getPoiId(currentNearestPoi) === poiId);
       poi.marker.setIcon(createPoiIcon(isCurrentNearest, isVisited));
 
-      // UI im unteren Panel aktualisieren, falls es sich um den nächsten POI handelt
       if (isCurrentNearest) {
         updatePanelVisitedState(isVisited);
       }
@@ -531,7 +503,6 @@
       }
     }
 
-    // Nächstgelegenen POI berechnen und UI füttern
     function updateNearestPOI(userLat, userLon) {
       if (poiList.length === 0) return;
 
@@ -549,18 +520,16 @@
       if (!closestPoi) return;
       currentNearestPoi = closestPoi;
 
-      // Panel-Daten setzen
       const nameBtn = document.getElementById("nearest-name-btn");
       nameBtn.textContent = closestPoi.name;
 
-      const subParts = [closestPoi.ort, closestPoi.welterbe].filter(Boolean);
-      document.getElementById("nearest-meta").textContent = subParts.length > 0 ? subParts.join(" • ") : "UNESCO-Welterbe";
+      const subParts = [closestPoi.ort, closestPoi.typ].filter(Boolean);
+      document.getElementById("nearest-meta").textContent = subParts.length > 0 ? subParts.join(" • ") : "Tourismus-POI";
       document.getElementById("nearest-distance").textContent = formatDistance(minDistance);
 
       const isVisited = !!visitedStore[getPoiId(closestPoi)];
       updatePanelVisitedState(isVisited);
 
-      // Marker hervorheben
       if (currentNearestMarker && currentNearestMarker !== closestPoi.marker) {
         const prevPoi = poiList.find(p => p.marker === currentNearestMarker);
         const prevVisited = prevPoi ? !!visitedStore[getPoiId(prevPoi)] : false;
@@ -569,7 +538,6 @@
       closestPoi.marker.setIcon(createPoiIcon(true, isVisited));
       currentNearestMarker = closestPoi.marker;
 
-      // Luftlinie zeichnen
       if (nearestLine) map.removeLayer(nearestLine);
       nearestLine = L.polyline(
         [[userLat, userLon], [closestPoi.lat, closestPoi.lon]],
@@ -577,7 +545,7 @@
       ).addTo(map);
     }
 
-    // Interaktiver Name klickbar: Smooth Zoom & Popup öffnen
+    // Klick auf den Namen im Panel -> Smooth Zoom & Popup öffnen
     document.getElementById("nearest-name-btn").addEventListener("click", () => {
       if (!currentNearestPoi) return;
       map.flyTo([currentNearestPoi.lat, currentNearestPoi.lon], 16, {
@@ -615,7 +583,7 @@
     });
 
     // Initialisierung starten
-    loadWfsData().then(() => {
+    loadGeoJsonData().then(() => {
       locateControl.start();
     });
   </script>
