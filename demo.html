@@ -18,7 +18,13 @@
     <div id="map"></div>
 
     <section class="info-panel" aria-live="polite">
-
+      <div class="panel-header">
+        <!-- Тексты удалены для компактности -->
+        <span id="gps-status" class="status-badge" style="margin-left: auto;">
+          <span class="status-dot"></span>
+          <span id="gps-status-text" style="display: none;">GPS inaktiv</span>
+        </span>
+      </div>
 
       <div class="poi-content">
         <div class="poi-details">
@@ -32,40 +38,40 @@
         </div>
       </div>
 
-      <div class="panel-footer-row">
-        <label class="visited-checkbox-label">
+      <!-- Компактный футер: чекбокс "Besucht" и свитчер сторон на одной линии -->
+      <div class="panel-footer-row" style="display: flex; align-items: center; justify-content: space-between; gap: 8px;">
+        <label class="visited-checkbox-label" style="display: flex; align-items: center; gap: 6px; font-size: 0.8rem; cursor: pointer;">
           <input type="checkbox" id="nearest-visited-checkbox" />
-          <span>Als besucht markieren</span>
+          <span>Besucht</span>
         </label>
         <span id="visited-status-badge" style="font-size: 0.75rem; color: var(--success); font-weight: 600; display: none;">✓ Besucht</span>
+
+        <!-- Компактный селектор стороны -->
+        <div style="display: flex; align-items: center; gap: 4px; font-size: 0.8rem;">
+          <select id="side-selector" style="padding: 2px 4px; border-radius: 4px; border: 1px solid #ccc; font-size: 0.75rem; cursor: pointer;">
+            <option value="both">Beide</option>
+            <option value="right">Rechts</option>
+            <option value="left">Links</option>
+          </select>
+        </div>
       </div>
 
-      <!-- DEMO-STEUERUNG, KAMERA & SEITEN-SWITCHER -->
-      <div style="margin-top: 14px; padding-top: 12px; border-top: 1px solid rgba(0,0,0,0.1);">
-        <button id="toggle-demo-btn" style="width: 100%; padding: 10px; background: #E69F00; color: white; border: none; border-radius: 6px; cursor: pointer; font-weight: 600; font-size: 0.9rem; transition: background 0.2s;">
+      <!-- DEMO-STEUERUNG & GESCHWINDIGKEIT -->
+      <div style="margin-top: 10px; padding-top: 8px; border-top: 1px solid rgba(0,0,0,0.1);">
+        <button id="toggle-demo-btn" style="width: 100%; padding: 8px; background: #E69F00; color: white; border: none; border-radius: 6px; cursor: pointer; font-weight: 600; font-size: 0.85rem; transition: background 0.2s;">
           🚆 RE 5 Demo starten
         </button>
         
-        <div style="margin-top: 10px; display: flex; align-items: center; justify-content: space-between; font-size: 0.85rem;">
+        <div style="margin-top: 6px; display: flex; align-items: center; justify-content: space-between; font-size: 0.8rem;">
           <label style="cursor: pointer; display: flex; align-items: center; gap: 6px; user-select: none;">
             <input type="checkbox" id="follow-train-checkbox" checked />
             Kamera folgen (panTo)
           </label>
         </div>
 
-        <!-- Свитчер сторон (Links / Rechts / Beide) -->
-        <div style="margin-top: 10px; display: flex; align-items: center; justify-content: space-between; font-size: 0.85rem;">
-          <label for="side-selector" style="font-weight: 500;">POI-Seite:</label>
-          <select id="side-selector" style="padding: 4px 8px; border-radius: 4px; border: 1px solid #ccc; font-size: 0.85rem; cursor: pointer;">
-            <option value="both">Beide</option>
-            <option value="right"> Links </option>
-            <option value="left"> Rechts </option>
-          </select>
-        </div>
-
         <!-- Регулятор скорости до 300 км/ч -->
-        <div style="margin-top: 10px; font-size: 0.85rem;">
-          <div style="display: flex; justify-content: space-between; margin-bottom: 4px;">
+        <div style="margin-top: 6px; font-size: 0.8rem;">
+          <div style="display: flex; justify-content: space-between; margin-bottom: 2px;">
             <span>Geschwindigkeit: <strong id="speed-value">100</strong> km/h</span>
           </div>
           <input type="range" id="train-speed-range" min="50" max="300" step="10" value="100" style="width: 100%; cursor: pointer;" />
@@ -128,12 +134,12 @@
     let isDemoActive = false;
     let routeLayer = null;
     let currentRouteIndex = 0;
-    let currentTrainSpeed = 100; // Текущая скорость в км/ч
-    let lastUserLat = null;      // Последняя широта для пересчета при смене селектора
-    let lastUserLon = null;      // Последняя долгота для пересчета при смене селектора
+    let currentTrainSpeed = 100;
+    let lastUserLat = null;
+    let lastUserLon = null;
 
     let activePoiLayer = L.layerGroup().addTo(map);
-    const MAX_RENDER_RADIUS_METERS = 12000; // Ограничение буфера до 6 км
+    const MAX_RENDER_RADIUS_METERS = 6000; // 6 km Puffer
 
     function calculateHaversineDistance(lat1, lon1, lat2, lon2) {
       const R = 6371000;
@@ -291,25 +297,20 @@
       return popupContent;
     }
 
-    // Проверка положения POI относительно направления движения (Слева / Справа)
     function isPoiOnSelectedSide(userLat, userLon, nextLat, nextLon, poiLat, poiLon, sideOption) {
       if (sideOption === "both") return true;
 
-      // Вектор движения (от текущей позиции к следующей точке или условное направление)
       const dLat = nextLat - userLat;
       const dLon = nextLon - userLon;
-      
-      // Вектор от пользователя до POI
       const pLat = poiLat - userLat;
       const pLon = poiLon - userLon;
 
-      // Векторное произведение (Cross product в 2D)
       const crossProduct = dLat * pLon - dLon * pLat;
 
       if (sideOption === "right") {
-        return crossProduct < 0; // Справа по ходу движения
+        return crossProduct < 0;
       } else if (sideOption === "left") {
-        return crossProduct > 0; // Слева по ходу движения
+        return crossProduct > 0;
       }
       return true;
     }
@@ -322,7 +323,6 @@
 
       const sideOption = document.getElementById("side-selector").value;
 
-      // Получаем следующую точку для определения направления вектора движения
       let nextLat = userLat + 0.001;
       let nextLon = userLon + 0.001;
       if (isDemoActive && routeCoordinates.length > 0) {
@@ -334,7 +334,6 @@
       let closestPoi = null;
       let minDistance = Infinity;
 
-      // Поиск ближайшего POI с учетом фильтра стороны и лимита в 6 км
       for (const poi of poiList) {
         const dist = calculateHaversineDistance(userLat, userLon, poi.lat, poi.lon);
         if (dist <= MAX_RENDER_RADIUS_METERS) {
@@ -460,8 +459,6 @@
       }
 
       document.getElementById("gps-status").classList.add("active");
-      document.getElementById("gps-status-text").textContent = "DEMO: RE 5 unterwegs";
-
       restartDemoInterval();
     }
 
@@ -473,17 +470,14 @@
       }
       if (demoMarker) map.removeLayer(demoMarker);
       document.getElementById("gps-status").classList.remove("active");
-      document.getElementById("gps-status-text").textContent = "GPS inaktiv";
     }
 
-    // Обработчики элементов управления
     document.getElementById("train-speed-range").addEventListener("input", (e) => {
       currentTrainSpeed = parseInt(e.target.value, 10);
       document.getElementById("speed-value").textContent = currentTrainSpeed;
       if (isDemoActive) restartDemoInterval();
     });
 
-    // Обработчик переключения стороны (Лево / Право / Обе)
     document.getElementById("side-selector").addEventListener("change", () => {
       if (lastUserLat !== null && lastUserLon !== null) {
         updateNearestPOI(lastUserLat, lastUserLon);
@@ -527,14 +521,12 @@
     map.on("locationfound", (e) => {
       if (isDemoActive) return;
       document.getElementById("gps-status").classList.add("active");
-      document.getElementById("gps-status-text").textContent = `GPS aktiv (±${Math.round(e.accuracy)} m)`;
       updateNearestPOI(e.latlng.lat, e.latlng.lng);
     });
 
     map.on("locationerror", () => {
       if (isDemoActive) return;
       document.getElementById("gps-status").classList.remove("active");
-      document.getElementById("gps-status-text").textContent = "Kein GPS-Signal";
     });
 
     Promise.all([
