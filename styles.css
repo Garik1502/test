@@ -197,6 +197,10 @@
 
     /* Marker Styling */
     .poi-marker-pin {
+            width: 30px;   /* Hier gewünschte Größe in Pixeln eintragen (vorher war es kleiner) */
+            height: 30px;  /* Hier ebenfalls anpassen */
+            margin-left: -15px;  /* Immer die Hälfte der Breite als negativer Wert */
+            margin-top: -15px;   /* Immer die Hälfte der Höhe als negativer Wert */
       background-color: var(--primary);
       border: 2.5px solid #ffffff;
       border-radius: 50%;
