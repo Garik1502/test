@@ -14,7 +14,6 @@
   
 </head>
 <body>
-
   <div class="app-container">
     <div id="map"></div>
 
@@ -29,7 +28,6 @@
 
       <div class="poi-content">
         <div class="poi-details">
-          <!-- Interaktiver Name -->
           <button id="nearest-name-btn" class="poi-title-btn" title="Klicken, um zum POI zu zoomen">Standort wird ermittelt…</button>
           <div id="nearest-meta" class="poi-subtitle">Bitte GPS aktivieren oder Standortfreigabe erlauben</div>
         </div>
@@ -47,6 +45,38 @@
         </label>
         <span id="visited-status-badge" style="font-size: 0.75rem; color: var(--success); font-weight: 600; display: none;">✓ Besucht</span>
       </div>
+
+      <!-- DEMO-STEUERUNG, KAMERA & SEITEN-SWITCHER -->
+      <div style="margin-top: 14px; padding-top: 12px; border-top: 1px solid rgba(0,0,0,0.1);">
+        <button id="toggle-demo-btn" style="width: 100%; padding: 10px; background: #E69F00; color: white; border: none; border-radius: 6px; cursor: pointer; font-weight: 600; font-size: 0.9rem; transition: background 0.2s;">
+          🚆 RE 5 Demo starten
+        </button>
+        
+        <div style="margin-top: 10px; display: flex; align-items: center; justify-content: space-between; font-size: 0.85rem;">
+          <label style="cursor: pointer; display: flex; align-items: center; gap: 6px; user-select: none;">
+            <input type="checkbox" id="follow-train-checkbox" checked />
+            Kamera folgen (panTo)
+          </label>
+        </div>
+
+        <!-- Свитчер сторон (Links / Rechts / Beide) -->
+        <div style="margin-top: 10px; display: flex; align-items: center; justify-content: space-between; font-size: 0.85rem;">
+          <label for="side-selector" style="font-weight: 500;">POI-Seite:</label>
+          <select id="side-selector" style="padding: 4px 8px; border-radius: 4px; border: 1px solid #ccc; font-size: 0.85rem; cursor: pointer;">
+            <option value="both">Beide Seiten</option>
+            <option value="right">Nur Rechts</option>
+            <option value="left">Nur Links</option>
+          </select>
+        </div>
+
+        <!-- Регулятор скорости до 300 км/ч -->
+        <div style="margin-top: 10px; font-size: 0.85rem;">
+          <div style="display: flex; justify-content: space-between; margin-bottom: 4px;">
+            <span>Geschwindigkeit: <strong id="speed-value">100</strong> km/h</span>
+          </div>
+          <input type="range" id="train-speed-range" min="50" max="300" step="10" value="100" style="width: 100%; cursor: pointer;" />
+        </div>
+      </div>
     </section>
   </div>
 
@@ -61,7 +91,6 @@
   <script src="https://unpkg.com/@maplibre/maplibre-gl-leaflet@0.0.17/leaflet-maplibre-gl.js"></script>
 
   <script>
-    // 1. Koordinatensystem EPSG:25832 definieren
     proj4.defs("EPSG:25832", "+proj=utm +zone=32 +ellps=GRS80 +towgs84=0,0,0,0,0,0,0 +units=m +no_defs +type=crs");
 
     const STORAGE_KEY = "tourismus_pois_visited_v1";
@@ -70,9 +99,8 @@
     var map = L.map('map', {
        minZoom: 6,
        maxZoom: 15,
-    }).setView([51, 10], 6);
+    }).setView([51.22, 6.77], 8);
 
-    // Vektor-Stile von BKG definieren
     var topographicLayer = L.maplibreGL({
        style: 'https://sgx.geodatenzentrum.de/gdz_basemapde_vektor/styles/bm_web_top.json',
     });
@@ -84,13 +112,7 @@
     var dunkelLayer = L.maplibreGL({
        style: 'https://sgx.geodatenzentrum.de/gdz_basemapde_vektor/styles/bm_web_drk.json',
     });
-    
-    const railwayMaxspeed = L.tileLayer('https://tiles.openrailwaymap.org/maxspeed/{z}/{x}/{y}.png', {
-    attribution: 'Kartendaten: &copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> | Darstellung: <a href="https://www.openrailwaymap.org/">OpenRailwayMap</a> (<a href="https://creativecommons.org/licenses/by-sa/2.0/">CC-BY-SA</a>)',
-    maxZoom: 19
-}).addTo(map);
 
-    // Standardmäßig die helle Karte beim Start laden
     hellLayer.addTo(map);
 
     var baseMaps = {
@@ -99,19 +121,25 @@
       "Hell": hellLayer
     };
 
-    L.control.layers(baseMaps, null, {
-      position: 'topright',
-      collapsed: true
-    }).aio ? L.control.layers(baseMaps, null, { position: 'topright', collapsed: true }).addTo(map) : L.control.layers(baseMaps, null, { position: 'topright', collapsed: true }).addTo(map);
+    L.control.layers(baseMaps, null, { position: 'topright', collapsed: true }).addTo(map);
 
     let poiList = [];
     let nearestLine = null;
     let currentNearestMarker = null;
     let currentNearestPoi = null;
 
-    // Layer-Gruppe für nur die sichtbaren Punkte im Radius (verhindert Lags bei 4000+ Punkten)
+    let routeCoordinates = []; 
+    let demoMarker = null;       
+    let demoInterval = null;     
+    let isDemoActive = false;
+    let routeLayer = null;
+    let currentRouteIndex = 0;
+    let currentTrainSpeed = 100; // Текущая скорость в км/ч
+    let lastUserLat = null;      // Последняя широта для пересчета при смене селектора
+    let lastUserLon = null;      // Последняя долгота для пересчета при смене селектора
+
     let activePoiLayer = L.layerGroup().addTo(map);
-    const MAX_RENDER_RADIUS_METERS = 8000; // 8 km Radius
+    const MAX_RENDER_RADIUS_METERS = 6000; // Ограничение буфера до 6 км
 
     function calculateHaversineDistance(lat1, lon1, lat2, lon2) {
       const R = 6371000;
@@ -157,7 +185,6 @@
       });
     }
 
-    // 4. GeoJSON-Daten laden (Alle Daten einmalig in den Arbeitsspeicher einlesen)
     async function loadGeoJsonData() {
       try {
         const response = await fetch("POIs_puffer2km.geojson");
@@ -166,49 +193,69 @@
 
         geojsonData.features.forEach((feature) => {
           if (!feature.geometry || feature.geometry.type !== "Point") return;
-
           const { lat, lon } = toWGS84(feature.geometry.coordinates);
           const props = feature.properties || {};
-
           const name = props.Name_ReprO || props.Name_Bestt || props.name || "Unbekannter POI";
           const welterbe = props.Name_WeltE || "";
           const ort = [props.PLZ, props.Ort].filter(Boolean).join(" ");
           const typ = props.Typ || props.Art || "";
-          const homepage = props.Homepage
-            ? (props.Homepage.startsWith("http") ? props.Homepage : `https://${props.Homepage}`)
-            : null;
+          const homepage = props.Homepage ? (props.Homepage.startsWith("http") ? props.Homepage : `https://${props.Homepage}`) : null;
 
-          const poiObj = { name, welterbe, ort, typ, homepage, lat, lon, marker: null };
-          poiList.push(poiObj);
+          poiList.push({ name, welterbe, ort, typ, homepage, lat, lon, marker: null });
         });
-
-        console.log(`${poiList.length} POIs erfolgreich geladen.`);
-
+        console.log(`${poiList.length} POIs geladen.`);
       } catch (error) {
-        console.error("Fehler beim Laden der GeoJSON-Datei:", error);
-        document.getElementById("nearest-name-btn").textContent = "GeoJSON nicht geladen";
-        document.getElementById("nearest-meta").textContent = "Bitte lokalen Webserver starten.";
+        console.error("Fehler beim Laden der POIs:", error);
       }
     }
 
-    // Besucht-Status speichern
+    async function loadRouteGeoJson() {
+      try {
+        const response = await fetch("wesel_coblenz_re5.geojson");
+        if (!response.ok) throw new Error(`HTTP-Fehler: ${response.status}`);
+        const data = await response.json();
+
+        routeLayer = L.geoJSON(data, {
+          style: { color: "#2563eb", weight: 4, opacity: 0.8 }
+        }).addTo(map);
+
+        data.features.forEach((feature) => {
+          if (!feature.geometry) return;
+          const coords = feature.geometry.coordinates;
+
+          if (feature.geometry.type === "LineString") {
+            coords.forEach(coord => {
+              const { lat, lon } = toWGS84(coord);
+              routeCoordinates.push([lat, lon]);
+            });
+          } else if (feature.geometry.type === "MultiLineString") {
+            coords.forEach(line => {
+              line.forEach(coord => {
+                const { lat, lon } = toWGS84(coord);
+                routeCoordinates.push([lat, lon]);
+              });
+            });
+          }
+        });
+        console.log(`Route RE 5 geladen: ${routeCoordinates.length} Punkte.`);
+      } catch (error) {
+        console.warn("Konnte wesel_coblenz_re5.geojson nicht laden. Verwende Fallback-Route.", error);
+        routeCoordinates = [
+          [51.6585, 6.6194], [51.55, 6.75], [51.43, 6.76], 
+          [51.22, 6.77], [50.93, 6.95], [50.73, 7.09], [50.35, 7.59]
+        ];
+      }
+    }
+
     function setPoiVisited(poi, isVisited) {
       const poiId = getPoiId(poi);
-      if (isVisited) {
-        visitedStore[poiId] = true;
-      } else {
-        delete visitedStore[poiId];
-      }
+      if (isVisited) visitedStore[poiId] = true;
+      else delete visitedStore[poiId];
       localStorage.setItem(STORAGE_KEY, JSON.stringify(visitedStore));
 
       const isCurrentNearest = (currentNearestPoi && getPoiId(currentNearestPoi) === poiId);
-      if (poi.marker) {
-        poi.marker.setIcon(createPoiIcon(isCurrentNearest, isVisited));
-      }
-
-      if (isCurrentNearest) {
-        updatePanelVisitedState(isVisited);
-      }
+      if (poi.marker) poi.marker.setIcon(createPoiIcon(isCurrentNearest, isVisited));
+      if (isCurrentNearest) updatePanelVisitedState(isVisited);
     }
 
     function updatePanelVisitedState(isVisited) {
@@ -226,11 +273,9 @@
       }
     }
 
-    // Funktion zum Erstellen des Popups für einen POI
     function createPopupContent(poi) {
       const poiId = getPoiId(poi);
       const isVisited = !!visitedStore[poiId];
-
       const popupContent = document.createElement("div");
       popupContent.innerHTML = `
         <div class="popup-title">${poi.name}</div>
@@ -246,72 +291,112 @@
           </label>
         </div>
       `;
-
-      const cb = popupContent.querySelector(".popup-visited-cb");
-      cb.addEventListener("change", (e) => {
+      popupContent.querySelector(".popup-visited-cb").addEventListener("change", (e) => {
         setPoiVisited(poi, e.target.checked);
       });
-
       return popupContent;
     }
 
-    // Hauptfunktion: Aktualisiert Radar, Nächsten Punkt und rendert nur POIs im 8km-Radius
+    // Проверка положения POI относительно направления движения (Слева / Справа)
+    function isPoiOnSelectedSide(userLat, userLon, nextLat, nextLon, poiLat, poiLon, sideOption) {
+      if (sideOption === "both") return true;
+
+      // Вектор движения (от текущей позиции к следующей точке или условное направление)
+      const dLat = nextLat - userLat;
+      const dLon = nextLon - userLon;
+      
+      // Вектор от пользователя до POI
+      const pLat = poiLat - userLat;
+      const pLon = poiLon - userLon;
+
+      // Векторное произведение (Cross product в 2D)
+      const crossProduct = dLat * pLon - dLon * pLat;
+
+      if (sideOption === "right") {
+        return crossProduct < 0; // Справа по ходу движения
+      } else if (sideOption === "left") {
+        return crossProduct > 0; // Слева по ходу движения
+      }
+      return true;
+    }
+
     function updateNearestPOI(userLat, userLon) {
       if (poiList.length === 0) return;
+
+      lastUserLat = userLat;
+      lastUserLon = userLon;
+
+      const sideOption = document.getElementById("side-selector").value;
+
+      // Получаем следующую точку для определения направления вектора движения
+      let nextLat = userLat + 0.001;
+      let nextLon = userLon + 0.001;
+      if (isDemoActive && routeCoordinates.length > 0) {
+        const nextIndex = (currentRouteIndex < routeCoordinates.length) ? currentRouteIndex : 0;
+        nextLat = routeCoordinates[nextIndex][0];
+        nextLon = routeCoordinates[nextIndex][1];
+      }
 
       let closestPoi = null;
       let minDistance = Infinity;
 
-      // 1. Nächsten Punkt im gesamten Array finden
+      // Поиск ближайшего POI с учетом фильтра стороны и лимита в 6 км
       for (const poi of poiList) {
         const dist = calculateHaversineDistance(userLat, userLon, poi.lat, poi.lon);
-        if (dist < minDistance) {
-          minDistance = dist;
-          closestPoi = poi;
+        if (dist <= MAX_RENDER_RADIUS_METERS) {
+          if (isPoiOnSelectedSide(userLat, userLon, nextLat, nextLon, poi.lat, poi.lon, sideOption)) {
+            if (dist < minDistance) {
+              minDistance = dist;
+              closestPoi = poi;
+            }
+          }
         }
       }
 
-      if (!closestPoi) return;
+      const nameBtn = document.getElementById("nearest-name-btn");
+      const metaDiv = document.getElementById("nearest-meta");
+      const distDiv = document.getElementById("nearest-distance");
+
+      if (!closestPoi) {
+        nameBtn.textContent = "Keine POIs in diesem Bereich";
+        metaDiv.textContent = "Bitte Puffer oder Seite anpassen";
+        distDiv.textContent = "–";
+        currentNearestPoi = null;
+        activePoiLayer.clearLayers();
+        if (nearestLine) map.removeLayer(nearestLine);
+        return;
+      }
+
       currentNearestPoi = closestPoi;
 
-      // 2. UI im Info-Panel füllen
-      const nameBtn = document.getElementById("nearest-name-btn");
       nameBtn.textContent = closestPoi.name;
-
       const subParts = [closestPoi.ort, closestPoi.typ].filter(Boolean);
-      document.getElementById("nearest-meta").textContent = subParts.length > 0 ? subParts.join(" • ") : "Tourismus-POI";
-      document.getElementById("nearest-distance").textContent = formatDistance(minDistance);
+      metaDiv.textContent = subParts.length > 0 ? subParts.join(" • ") : "Tourismus-POI";
+      distDiv.textContent = formatDistance(minDistance);
 
-      const isVisited = !!visitedStore[getPoiId(closestPoi)];
-      updatePanelVisitedState(isVisited);
+      updatePanelVisitedState(!!visitedStore[getPoiId(closestPoi)]);
 
-      // 3. PERFORMANCE-OPTIMIERUNG: Nur Punkte im Radius von 8 km auf der Karte rendern
-      activePoiLayer.clearLayers(); // Alte Marker im Radius löschen
-
+      activePoiLayer.clearLayers();
       poiList.forEach((poi) => {
         const distToUser = calculateHaversineDistance(userLat, userLon, poi.lat, poi.lon);
-        
         if (distToUser <= MAX_RENDER_RADIUS_METERS) {
-          const isThisNearest = (poi === closestPoi);
-          const poiVisited = !!visitedStore[getPoiId(poi)];
-
-          const marker = L.marker([poi.lat, poi.lon], { 
-            icon: createPoiIcon(isThisNearest, poiVisited) 
-          }).bindPopup(createPopupContent(poi));
-
-          poi.marker = marker;
-          activePoiLayer.addLayer(marker);
-
-          if (isThisNearest) {
-            currentNearestMarker = marker;
+          if (isPoiOnSelectedSide(userLat, userLon, nextLat, nextLon, poi.lat, poi.lon, sideOption)) {
+            const isThisNearest = (poi === closestPoi);
+            const marker = L.marker([poi.lat, poi.lon], { 
+              icon: createPoiIcon(isThisNearest, !!visitedStore[getPoiId(poi)]) 
+            }).bindPopup(createPopupContent(poi));
+            poi.marker = marker;
+            activePoiLayer.addLayer(marker);
+            if (isThisNearest) currentNearestMarker = marker;
+          } else {
+            poi.marker = null;
           }
         } else {
-          poi.marker = null; // Ausserhalb des Radius nicht im DOM halten
+          poi.marker = null;
         }
       });
 
-      // Falls der allerneueste Punkt außerhalb des 8km-Radius liegen sollte (z.B. Test-Modus), sicherstellen, dass er trotzdem da ist:
-      if (!activePoiLayer.hasLayer(closestPoi.marker)) {
+      if (!closestPoi.marker || !activePoiLayer.hasLayer(closestPoi.marker)) {
         const nearestVisited = !!visitedStore[getPoiId(closestPoi)];
         const marker = L.marker([closestPoi.lat, closestPoi.lon], { 
           icon: createPoiIcon(true, nearestVisited) 
@@ -321,30 +406,118 @@
         currentNearestMarker = marker;
       }
 
-      // 4. Gestrichelte Linie zum nächsten Punkt zeichnen
       if (nearestLine) map.removeLayer(nearestLine);
       nearestLine = L.polyline(
         [[userLat, userLon], [closestPoi.lat, closestPoi.lon]],
-        { color: "#CC79A7", weight: 2.5, dashArray: "6, 8", opacity: 0.85 }
+        { color: "#dc2626", weight: 2.5, dashArray: "6, 8", opacity: 0.85 }
       ).addTo(map);
     }
 
-    // Klick auf den Namen im Panel -> Smooth Zoom & Popup öffnen
-    document.getElementById("nearest-name-btn").addEventListener("click", () => {
-      if (!currentNearestPoi) return;
-      map.flyTo([currentNearestPoi.lat, currentNearestPoi.lon], 16, {
-        animate: true,
-        duration: 1.2
-      });
-      if (currentNearestPoi.marker) {
-        currentNearestPoi.marker.openPopup();
+    function getIntervalFromSpeed(speedKmh) {
+      return Math.max(100, Math.round(1200 * (100 / speedKmh)));
+    }
+
+    function restartDemoInterval() {
+      if (!isDemoActive) return;
+      if (demoInterval) clearInterval(demoInterval);
+
+      const intervalMs = getIntervalFromSpeed(currentTrainSpeed);
+
+      demoInterval = setInterval(() => {
+        if (currentRouteIndex >= routeCoordinates.length) {
+          currentRouteIndex = 0;
+        }
+
+        const currentLatLng = routeCoordinates[currentRouteIndex];
+        demoMarker.setLatLng(currentLatLng);
+
+        const followCheckbox = document.getElementById("follow-train-checkbox");
+        if (followCheckbox && followCheckbox.checked) {
+          map.panTo(currentLatLng, { animate: true, duration: intervalMs / 1000 * 0.9 });
+        }
+
+        updateNearestPOI(currentLatLng[0], currentLatLng[1]);
+        currentRouteIndex++;
+      }, intervalMs);
+    }
+
+    function startDemoRide() {
+      if (routeCoordinates.length === 0) {
+        alert("Keine Route verfügbar!");
+        return;
+      }
+
+      isDemoActive = true;
+      currentRouteIndex = 0;
+
+      if (locateControl && locateControl._active) locateControl.stop();
+
+      if (!demoMarker) {
+        const trainIcon = L.divIcon({
+          className: 'demo-train-marker',
+          html: '<div style="background: #1e3a8a; width: 20px; height: 20px; border-radius: 50%; border: 3px solid white; box-shadow: 0 0 10px rgba(0,0,0,0.6); display: flex; align-items: center; justify-content: center; font-size: 10px; color: white;">🚆</div>',
+          iconSize: [20, 20],
+          iconAnchor: [10, 10]
+        });
+        demoMarker = L.marker(routeCoordinates[0], { icon: trainIcon }).addTo(map);
+      } else {
+        demoMarker.setLatLng(routeCoordinates[0]);
+        demoMarker.addTo(map);
+      }
+
+      document.getElementById("gps-status").classList.add("active");
+      document.getElementById("gps-status-text").textContent = "DEMO: RE 5 unterwegs";
+
+      restartDemoInterval();
+    }
+
+    function stopDemoRide() {
+      isDemoActive = false;
+      if (demoInterval) {
+        clearInterval(demoInterval);
+        demoInterval = null;
+      }
+      if (demoMarker) map.removeLayer(demoMarker);
+      document.getElementById("gps-status").classList.remove("active");
+      document.getElementById("gps-status-text").textContent = "GPS inaktiv";
+    }
+
+    // Обработчики элементов управления
+    document.getElementById("train-speed-range").addEventListener("input", (e) => {
+      currentTrainSpeed = parseInt(e.target.value, 10);
+      document.getElementById("speed-value").textContent = currentTrainSpeed;
+      if (isDemoActive) restartDemoInterval();
+    });
+
+    // Обработчик переключения стороны (Лево / Право / Обе)
+    document.getElementById("side-selector").addEventListener("change", () => {
+      if (lastUserLat !== null && lastUserLon !== null) {
+        updateNearestPOI(lastUserLat, lastUserLon);
       }
     });
 
-    // Checkbox im Panel verknüpfen
+    document.getElementById("nearest-name-btn").addEventListener("click", () => {
+      if (!currentNearestPoi) return;
+      map.flyTo([currentNearestPoi.lat, currentNearestPoi.lon], 16, { animate: true, duration: 1.2 });
+      if (currentNearestPoi.marker) currentNearestPoi.marker.openPopup();
+    });
+
     document.getElementById("nearest-visited-checkbox").addEventListener("change", (e) => {
       if (!currentNearestPoi) return;
       setPoiVisited(currentNearestPoi, e.target.checked);
+    });
+
+    document.getElementById("toggle-demo-btn").addEventListener("click", () => {
+      const btn = document.getElementById("toggle-demo-btn");
+      if (!isDemoActive) {
+        startDemoRide();
+        btn.textContent = "⏹ RE 5 Demo stoppen";
+        btn.style.background = "#dc2626";
+      } else {
+        stopDemoRide();
+        btn.textContent = "🚆 RE 5 Demo starten";
+        btn.style.background = "#E69F00";
+      }
     });
 
     const locateControl = L.control.locate({
@@ -358,18 +531,22 @@
     }).addTo(map);
 
     map.on("locationfound", (e) => {
+      if (isDemoActive) return;
       document.getElementById("gps-status").classList.add("active");
       document.getElementById("gps-status-text").textContent = `GPS aktiv (±${Math.round(e.accuracy)} m)`;
       updateNearestPOI(e.latlng.lat, e.latlng.lng);
     });
 
     map.on("locationerror", () => {
+      if (isDemoActive) return;
       document.getElementById("gps-status").classList.remove("active");
       document.getElementById("gps-status-text").textContent = "Kein GPS-Signal";
     });
 
-    // Initialisierung starten: Erst Daten laden, dann GPS aktivieren
-    loadGeoJsonData().then(() => {
+    Promise.all([
+      loadGeoJsonData(),
+      loadRouteGeoJson()
+    ]).then(() => {
       locateControl.start();
     });
   </script>
