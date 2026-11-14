@@ -10,6 +10,20 @@
       --success: #F0E442;
     }
 
+/* 1. Den blauen Punkt deines GPS-Standorts anpassen */
+    .leaflet-locate-marker .leaflet-marker-icon {
+      background-color: #009E73 !important; /* Beispiel: Violetter Punkt statt Standard-Blau */
+      border: 3px solid #ffffff !important;
+      border-radius: 50% !important;
+      box-shadow: 0 0 12px rgba(124, 58, 237, 0.6) !important;
+    }
+
+    /* 2. Den Genauigkeitskreis (Puffer um deinen Standort) anpassen */
+    .leaflet-locate-accuracy {
+      background-color: rgba(124, 58, 237, 0.15) !important; /* Halbtransparente Füllung */
+      border: 1px solid rgba(124, 58, 237, 0.4) !important;
+    }
+
     * {
       box-sizing: border-box;
       margin: 0;
