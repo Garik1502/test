@@ -286,7 +286,7 @@
       return popupContent;
     }
 
-    function updateNearestPOI(userLat, userLon) {
+function updateNearestPOI(userLat, userLon) {
       if (poiList.length === 0) return;
 
       let closestPoi = null;
@@ -326,9 +326,11 @@
         }
       });
 
-      if (!activePoiLayer.hasLayer(closestPoi.marker)) {
+      // ИСПРАВЛЕННАЯ ПРОВЕРКА (добавлено !closestPoi.marker)
+      if (!closestPoi.marker || !activePoiLayer.hasLayer(closestPoi.marker)) {
+        const nearestVisited = !!visitedStore[getPoiId(closestPoi)];
         const marker = L.marker([closestPoi.lat, closestPoi.lon], { 
-          icon: createPoiIcon(true, !!visitedStore[getPoiId(closestPoi)]) 
+          icon: createPoiIcon(true, nearestVisited) 
         }).bindPopup(createPopupContent(closestPoi));
         closestPoi.marker = marker;
         activePoiLayer.addLayer(marker);
