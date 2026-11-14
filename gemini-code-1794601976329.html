@@ -442,7 +442,7 @@ L.control.layers(baseMaps, null, {
     // 4. GeoJSON-Daten laden (deine Original-Methode)
     async function loadGeoJsonData() {
       try {
-        const response = await fetch("pois7385.geojson");
+        const response = await fetch("POIs_puffer2km.geojson");
         if (!response.ok) throw new Error(`HTTP-Fehler: ${response.status}`);
         const geojsonData = await response.json();
 
