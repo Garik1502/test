@@ -63,9 +63,9 @@
         <div style="margin-top: 10px; display: flex; align-items: center; justify-content: space-between; font-size: 0.85rem;">
           <label for="side-selector" style="font-weight: 500;">POI-Seite:</label>
           <select id="side-selector" style="padding: 4px 8px; border-radius: 4px; border: 1px solid #ccc; font-size: 0.85rem; cursor: pointer;">
-            <option value="both">Beide Seiten</option>
-            <option value="right">Nur Rechts</option>
-            <option value="left">Nur Links</option>
+            <option value="both">Beide</option>
+            <option value="right"> Links </option>
+            <option value="left"> Rechts </option>
           </select>
         </div>
 
@@ -139,7 +139,7 @@
     let lastUserLon = null;      // Последняя долгота для пересчета при смене селектора
 
     let activePoiLayer = L.layerGroup().addTo(map);
-    const MAX_RENDER_RADIUS_METERS = 6000; // Ограничение буфера до 6 км
+    const MAX_RENDER_RADIUS_METERS = 12000; // Ограничение буфера до 6 км
 
     function calculateHaversineDistance(lat1, lon1, lat2, lon2) {
       const R = 6371000;
