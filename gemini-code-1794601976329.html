@@ -14,7 +14,6 @@
   
 </head>
 <body>
-
   <div class="app-container">
     <div id="map"></div>
 
@@ -46,6 +45,19 @@
           <span>Als besucht markieren</span>
         </label>
         <span id="visited-status-badge" style="font-size: 0.75rem; color: var(--success); font-weight: 600; display: none;">✓ Besucht</span>
+      </div>
+
+      <!-- ДЕМО-ПАНЕЛЬ УПРАВЛЕНИЯ ПОЕЗДОМ -->
+      <div style="margin-top: 14px; padding-top: 12px; border-top: 1px solid rgba(0,0,0,0.1);">
+        <button id="toggle-demo-btn" style="width: 100%; padding: 10px; background: #2563eb; color: white; border: none; border-radius: 6px; cursor: pointer; font-weight: 600; font-size: 0.9rem; transition: background 0.2s;">
+          🚆 Запустить поезд по маршруту RE 5
+        </button>
+        <div style="margin-top: 8px; display: flex; align-items: center; justify-content: space-between; font-size: 0.85rem;">
+          <label style="cursor: pointer; display: flex; align-items: center; gap: 6px; user-select: none;">
+            <input type="checkbox" id="follow-train-checkbox" checked />
+            Следовать за камерой (panTo)
+          </label>
+        </div>
       </div>
     </section>
   </div>
@@ -84,13 +96,7 @@
     var dunkelLayer = L.maplibreGL({
        style: 'https://sgx.geodatenzentrum.de/gdz_basemapde_vektor/styles/bm_web_drk.json',
     });
-    
-    const railwayMaxspeed = L.tileLayer('https://tiles.openrailwaymap.org/maxspeed/{z}/{x}/{y}.png', {
-    attribution: 'Kartendaten: &copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> | Darstellung: <a href="https://www.openrailwaymap.org/">OpenRailwayMap</a> (<a href="https://creativecommons.org/licenses/by-sa/2.0/">CC-BY-SA</a>)',
-    maxZoom: 19
-}).addTo(map);
 
-    // Standardmäßig die helle Karte beim Start laden
     hellLayer.addTo(map);
 
     var baseMaps = {
@@ -102,14 +108,21 @@
     L.control.layers(baseMaps, null, {
       position: 'topright',
       collapsed: true
-    }).aio ? L.control.layers(baseMaps, null, { position: 'topright', collapsed: true }).addTo(map) : L.control.layers(baseMaps, null, { position: 'topright', collapsed: true }).addTo(map);
+    }).addTo(map);
 
     let poiList = [];
     let nearestLine = null;
     let currentNearestMarker = null;
     let currentNearestPoi = null;
 
-    // Layer-Gruppe für nur die sichtbaren Punkte im Radius (verhindert Lags bei 4000+ Punkten)
+    // Демо-переменные для поезда и маршрута
+    let routeCoordinates = []; 
+    let demoMarker = null;       
+    let demoInterval = null;     
+    let isDemoActive = false;
+    let routeLayer = null;
+
+    // Layer-Gruppe für sichtbare Punkte im Radius
     let activePoiLayer = L.layerGroup().addTo(map);
     const MAX_RENDER_RADIUS_METERS = 8000; // 8 km Radius
 
@@ -157,7 +170,7 @@
       });
     }
 
-    // 4. GeoJSON-Daten laden (Alle Daten einmalig in den Arbeitsspeicher einlesen)
+    // 1. Загрузка POI из GeoJSON
     async function loadGeoJsonData() {
       try {
         const response = await fetch("POIs_puffer2km.geojson");
@@ -183,15 +196,56 @@
         });
 
         console.log(`${poiList.length} POIs erfolgreich geladen.`);
-
       } catch (error) {
-        console.error("Fehler beim Laden der GeoJSON-Datei:", error);
+        console.error("Fehler beim Laden der POI GeoJSON-Datei:", error);
         document.getElementById("nearest-name-btn").textContent = "GeoJSON nicht geladen";
         document.getElementById("nearest-meta").textContent = "Bitte lokalen Webserver starten.";
       }
     }
 
-    // Besucht-Status speichern
+    // 2. Загрузка линии маршрута из wesel_coblenz_re5.geojson
+    async function loadRouteGeoJson() {
+      try {
+        const response = await fetch("wesel_coblenz_re5.geojson");
+        if (!response.ok) throw new Error(`HTTP-Fehler: ${response.status}`);
+        const data = await response.json();
+
+        // Отрисовка линии маршрута на карте
+        routeLayer = L.geoJSON(data, {
+          style: {
+            color: "#2563eb",
+            weight: 4,
+            opacity: 0.8
+          }
+        }).addTo(map);
+
+        // Конвертация координат линии в WGS84
+        data.features.forEach((feature) => {
+          if (!feature.geometry) return;
+          const coords = feature.geometry.coordinates;
+
+          if (feature.geometry.type === "LineString") {
+            coords.forEach(coord => {
+              const { lat, lon } = toWGS84(coord);
+              routeCoordinates.push([lat, lon]);
+            });
+          } else if (feature.geometry.type === "MultiLineString") {
+            coords.forEach(line => {
+              line.forEach(coord => {
+                const { lat, lon } = toWGS84(coord);
+                routeCoordinates.push([lat, lon]);
+              });
+            });
+          }
+        });
+
+        console.log(`Маршрут RE 5 успешно загружен: ${routeCoordinates.length} точек.`);
+      } catch (error) {
+        console.error("Ошибка при загрузке wesel_coblenz_re5.geojson:", error);
+      }
+    }
+
+    // Управление статусом "Посещено"
     function setPoiVisited(poi, isVisited) {
       const poiId = getPoiId(poi);
       if (isVisited) {
@@ -226,7 +280,6 @@
       }
     }
 
-    // Funktion zum Erstellen des Popups für einen POI
     function createPopupContent(poi) {
       const poiId = getPoiId(poi);
       const isVisited = !!visitedStore[poiId];
@@ -255,14 +308,13 @@
       return popupContent;
     }
 
-    // Hauptfunktion: Aktualisiert Radar, Nächsten Punkt und rendert nur POIs im 8km-Radius
+    // Обновление радара и ближайшего POI
     function updateNearestPOI(userLat, userLon) {
       if (poiList.length === 0) return;
 
       let closestPoi = null;
       let minDistance = Infinity;
 
-      // 1. Nächsten Punkt im gesamten Array finden
       for (const poi of poiList) {
         const dist = calculateHaversineDistance(userLat, userLon, poi.lat, poi.lon);
         if (dist < minDistance) {
@@ -274,7 +326,6 @@
       if (!closestPoi) return;
       currentNearestPoi = closestPoi;
 
-      // 2. UI im Info-Panel füllen
       const nameBtn = document.getElementById("nearest-name-btn");
       nameBtn.textContent = closestPoi.name;
 
@@ -285,8 +336,7 @@
       const isVisited = !!visitedStore[getPoiId(closestPoi)];
       updatePanelVisitedState(isVisited);
 
-      // 3. PERFORMANCE-OPTIMIERUNG: Nur Punkte im Radius von 8 km auf der Karte rendern
-      activePoiLayer.clearLayers(); // Alte Marker im Radius löschen
+      activePoiLayer.clearLayers();
 
       poiList.forEach((poi) => {
         const distToUser = calculateHaversineDistance(userLat, userLon, poi.lat, poi.lon);
@@ -306,11 +356,10 @@
             currentNearestMarker = marker;
           }
         } else {
-          poi.marker = null; // Ausserhalb des Radius nicht im DOM halten
+          poi.marker = null;
         }
       });
 
-      // Falls der allerneueste Punkt außerhalb des 8km-Radius liegen sollte (z.B. Test-Modus), sicherstellen, dass er trotzdem da ist:
       if (!activePoiLayer.hasLayer(closestPoi.marker)) {
         const nearestVisited = !!visitedStore[getPoiId(closestPoi)];
         const marker = L.marker([closestPoi.lat, closestPoi.lon], { 
@@ -321,15 +370,85 @@
         currentNearestMarker = marker;
       }
 
-      // 4. Gestrichelte Linie zum nächsten Punkt zeichnen
       if (nearestLine) map.removeLayer(nearestLine);
       nearestLine = L.polyline(
         [[userLat, userLon], [closestPoi.lat, closestPoi.lon]],
-        { color: "#CC79A7", weight: 2.5, dashArray: "6, 8", opacity: 0.85 }
+        { color: "#dc2626", weight: 2.5, dashArray: "6, 8", opacity: 0.85 }
       ).addTo(map);
     }
 
-    // Klick auf den Namen im Panel -> Smooth Zoom & Popup öffnen
+    // Управление симуляцией поезда
+    function startDemoRide() {
+      if (routeCoordinates.length === 0) {
+        alert("Маршрут RE 5 еще не загружен!");
+        return;
+      }
+
+      isDemoActive = true;
+      let currentRouteIndex = 0;
+
+      if (locateControl && locateControl._active) {
+        locateControl.stop();
+      }
+
+      if (!demoMarker) {
+        const trainIcon = L.divIcon({
+          className: 'demo-train-marker',
+          html: '<div style="background: #1e3a8a; width: 20px; height: 20px; border-radius: 50%; border: 3px solid white; box-shadow: 0 0 10px rgba(0,0,0,0.6); display: flex; align-items: center; justify-content: center; font-size: 10px; color: white;">🚆</div>',
+          iconSize: [20, 20],
+          iconAnchor: [10, 10]
+        });
+        demoMarker = L.marker(routeCoordinates[0], { icon: trainIcon }).addTo(map);
+      } else {
+        demoMarker.setLatLng(routeCoordinates[0]);
+        demoMarker.addTo(map);
+      }
+
+      document.getElementById("gps-status").classList.add("active");
+      document.getElementById("gps-status-text").textContent = "Демо: RE 5 unterwegs";
+
+      if (demoInterval) clearInterval(demoInterval);
+
+      demoInterval = setInterval(() => {
+        if (currentRouteIndex >= routeCoordinates.length) {
+          currentRouteIndex = 0; // Зацикливание маршрута
+        }
+
+        const currentLatLng = routeCoordinates[currentRouteIndex];
+
+        // 1. Двигаем маркер поезда
+        demoMarker.setLatLng(currentLatLng);
+
+        // 2. Плавное следование камеры (если чекбокс активен)
+        const followCheckbox = document.getElementById("follow-train-checkbox");
+        if (followCheckbox && followCheckbox.checked) {
+          map.panTo(currentLatLng, {
+            animate: true,
+            duration: 0.9
+          });
+        }
+
+        // 3. Вызываем расчет ближайших POI для текущего положения поезда
+        updateNearestPOI(currentLatLng[0], currentLatLng[1]);
+
+        currentRouteIndex++;
+      }, 1000);
+    }
+
+    function stopDemoRide() {
+      isDemoActive = false;
+      if (demoInterval) {
+        clearInterval(demoInterval);
+        demoInterval = null;
+      }
+      if (demoMarker) {
+        map.removeLayer(demoMarker);
+      }
+      document.getElementById("gps-status").classList.remove("active");
+      document.getElementById("gps-status-text").textContent = "GPS inaktiv";
+    }
+
+    // Привязки UI-событий
     document.getElementById("nearest-name-btn").addEventListener("click", () => {
       if (!currentNearestPoi) return;
       map.flyTo([currentNearestPoi.lat, currentNearestPoi.lon], 16, {
@@ -341,10 +460,22 @@
       }
     });
 
-    // Checkbox im Panel verknüpfen
     document.getElementById("nearest-visited-checkbox").addEventListener("change", (e) => {
       if (!currentNearestPoi) return;
       setPoiVisited(currentNearestPoi, e.target.checked);
+    });
+
+    document.getElementById("toggle-demo-btn").addEventListener("click", () => {
+      const btn = document.getElementById("toggle-demo-btn");
+      if (!isDemoActive) {
+        startDemoRide();
+        btn.textContent = "⏹ Остановить демо-поезд";
+        btn.style.background = "#dc2626";
+      } else {
+        stopDemoRide();
+        btn.textContent = "🚆 Запустить поезд по маршруту RE 5";
+        btn.style.background = "#2563eb";
+      }
     });
 
     const locateControl = L.control.locate({
@@ -358,18 +489,23 @@
     }).addTo(map);
 
     map.on("locationfound", (e) => {
+      if (isDemoActive) return; // Игнорируем реальный GPS, если запущен демо-режим
       document.getElementById("gps-status").classList.add("active");
       document.getElementById("gps-status-text").textContent = `GPS aktiv (±${Math.round(e.accuracy)} m)`;
       updateNearestPOI(e.latlng.lat, e.latlng.lng);
     });
 
     map.on("locationerror", () => {
+      if (isDemoActive) return;
       document.getElementById("gps-status").classList.remove("active");
       document.getElementById("gps-status-text").textContent = "Kein GPS-Signal";
     });
 
-    // Initialisierung starten: Erst Daten laden, dann GPS aktivieren
-    loadGeoJsonData().then(() => {
+    // Инициализация: загружаем POI и линию маршрута параллельно
+    Promise.all([
+      loadGeoJsonData(),
+      loadRouteGeoJson()
+    ]).then(() => {
       locateControl.start();
     });
   </script>
