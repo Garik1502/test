@@ -12,7 +12,7 @@
 
   <style>
     :root {
-      --primary: #1d4ed8;
+      --primary: #56B4E9;
       --primary-light: #eff6ff;
       --accent: #0f172a;
       --text-main: #1e293b;
@@ -20,7 +20,7 @@
       --bg-panel: #ffffff;
       --border-color: #e2e8f0;
       --shadow: 0 -4px 20px rgba(15, 23, 42, 0.12);
-      --success: #16a34a;
+      --success: #F0E442;
     }
 
     * {
@@ -218,8 +218,8 @@
     }
 
     .poi-marker-pin.nearest {
-      background-color: #dc2626;
-      transform: scale(1.35);
+      background-color: #CC79A7;
+      transform: scale(2.35);
       z-index: 999 !important;
     }
 
@@ -606,7 +606,7 @@
       if (nearestLine) map.removeLayer(nearestLine);
       nearestLine = L.polyline(
         [[userLat, userLon], [closestPoi.lat, closestPoi.lon]],
-        { color: "#dc2626", weight: 2.5, dashArray: "6, 8", opacity: 0.85 }
+        { color: "#CC79A7", weight: 2.5, dashArray: "6, 8", opacity: 0.85 }
       ).addTo(map);
     }
 
