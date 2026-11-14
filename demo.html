@@ -1,0 +1,377 @@
+<!DOCTYPE html>
+<html lang="de">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no" />
+  <title>Tourismus-Radar & POI-Verwaltung</title>
+
+  <!-- Leaflet CSS -->
+  <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" crossorigin="" />
+  <!-- Leaflet LocateControl CSS -->
+  <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/leaflet.locatecontrol@0.79.0/dist/L.Control.Locate.min.css" />
+
+  <link rel="stylesheet" href="styles.css">
+  
+</head>
+<body>
+
+  <div class="app-container">
+    <div id="map"></div>
+
+    <section class="info-panel" aria-live="polite">
+      <div class="panel-header">
+        <span>Nächstgelegener Tourismus-POI</span>
+        <span id="gps-status" class="status-badge">
+          <span class="status-dot"></span>
+          <span id="gps-status-text">GPS inaktiv</span>
+        </span>
+      </div>
+
+      <div class="poi-content">
+        <div class="poi-details">
+          <!-- Interaktiver Name -->
+          <button id="nearest-name-btn" class="poi-title-btn" title="Klicken, um zum POI zu zoomen">Standort wird ermittelt…</button>
+          <div id="nearest-meta" class="poi-subtitle">Bitte GPS aktivieren oder Standortfreigabe erlauben</div>
+        </div>
+
+        <div class="distance-box">
+          <div id="nearest-distance" class="distance-value">–</div>
+          <div class="distance-label">Luftlinie</div>
+        </div>
+      </div>
+
+      <div class="panel-footer-row">
+        <label class="visited-checkbox-label">
+          <input type="checkbox" id="nearest-visited-checkbox" />
+          <span>Als besucht markieren</span>
+        </label>
+        <span id="visited-status-badge" style="font-size: 0.75rem; color: var(--success); font-weight: 600; display: none;">✓ Besucht</span>
+      </div>
+    </section>
+  </div>
+
+  <!-- Leaflet JS -->
+  <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js" crossorigin=""></script>
+  <!-- Leaflet LocateControl JS -->
+  <script src="https://cdn.jsdelivr.net/npm/leaflet.locatecontrol@0.79.0/dist/L.Control.Locate.min.js"></script>
+  <!-- Proj4js für Koordinatentransformation (EPSG:25832 -> WGS84) -->
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/proj4js/2.11.0/proj4.js"></script>
+
+  <script src="https://unpkg.com/maplibre-gl@2.4.0/dist/maplibre-gl.js"></script>
+  <script src="https://unpkg.com/@maplibre/maplibre-gl-leaflet@0.0.17/leaflet-maplibre-gl.js"></script>
+
+  <script>
+    // 1. Koordinatensystem EPSG:25832 definieren
+    proj4.defs("EPSG:25832", "+proj=utm +zone=32 +ellps=GRS80 +towgs84=0,0,0,0,0,0,0 +units=m +no_defs +type=crs");
+
+    const STORAGE_KEY = "tourismus_pois_visited_v1";
+    let visitedStore = JSON.parse(localStorage.getItem(STORAGE_KEY)) || {};
+
+    var map = L.map('map', {
+       minZoom: 6,
+       maxZoom: 15,
+    }).setView([51, 10], 6);
+
+    // Vektor-Stile von BKG definieren
+    var topographicLayer = L.maplibreGL({
+       style: 'https://sgx.geodatenzentrum.de/gdz_basemapde_vektor/styles/bm_web_top.json',
+    });
+
+    var hellLayer = L.maplibreGL({
+       style: 'https://basemap.de/data/produkte/web_vektor/styles/bm_web_bin.json',
+    });
+
+    var dunkelLayer = L.maplibreGL({
+       style: 'https://sgx.geodatenzentrum.de/gdz_basemapde_vektor/styles/bm_web_drk.json',
+    });
+    
+    const railwayMaxspeed = L.tileLayer('https://tiles.openrailwaymap.org/maxspeed/{z}/{x}/{y}.png', {
+    attribution: 'Kartendaten: &copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> | Darstellung: <a href="https://www.openrailwaymap.org/">OpenRailwayMap</a> (<a href="https://creativecommons.org/licenses/by-sa/2.0/">CC-BY-SA</a>)',
+    maxZoom: 19
+}).addTo(map);
+
+    // Standardmäßig die helle Karte beim Start laden
+    hellLayer.addTo(map);
+
+    var baseMaps = {
+      "Topographisch": topographicLayer,
+      "Dunkel": dunkelLayer,
+      "Hell": hellLayer
+    };
+
+    L.control.layers(baseMaps, null, {
+      position: 'topright',
+      collapsed: true
+    }).aio ? L.control.layers(baseMaps, null, { position: 'topright', collapsed: true }).addTo(map) : L.control.layers(baseMaps, null, { position: 'topright', collapsed: true }).addTo(map);
+
+    let poiList = [];
+    let nearestLine = null;
+    let currentNearestMarker = null;
+    let currentNearestPoi = null;
+
+    // Layer-Gruppe für nur die sichtbaren Punkte im Radius (verhindert Lags bei 4000+ Punkten)
+    let activePoiLayer = L.layerGroup().addTo(map);
+    const MAX_RENDER_RADIUS_METERS = 8000; // 8 km Radius
+
+    function calculateHaversineDistance(lat1, lon1, lat2, lon2) {
+      const R = 6371000;
+      const toRad = (deg) => (deg * Math.PI) / 180;
+      const dLat = toRad(lat2 - lat1);
+      const dLon = toRad(lon2 - lon1);
+      const a =
+        Math.sin(dLat / 2) * Math.sin(dLat / 2) +
+        Math.cos(toRad(lat1)) * Math.cos(toRad(lat2)) *
+        Math.sin(dLon / 2) * Math.sin(dLon / 2);
+      return R * 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
+    }
+
+    function formatDistance(meters) {
+      if (meters < 1000) return `${Math.round(meters)} m`;
+      return `${(meters / 1000).toFixed(2).replace(".", ",")} km`;
+    }
+
+    function toWGS84(coords) {
+      const [x, y] = coords;
+      if (Math.abs(x) > 180 || Math.abs(y) > 90) {
+        const [lon, lat] = proj4("EPSG:25832", "EPSG:4326", [x, y]);
+        return { lat, lon };
+      }
+      return { lat: y, lon: x };
+    }
+
+    function getPoiId(poi) {
+      return `${poi.name}_${poi.lat}_${poi.lon}`;
+    }
+
+    function createPoiIcon(isNearest = false, isVisited = false) {
+      const size = isNearest ? 16 : 12;
+      let className = "poi-marker-pin";
+      if (isNearest) className += " nearest";
+      if (isVisited) className += " visited-marker";
+
+      return L.divIcon({
+        className: className,
+        iconSize: [size, size],
+        iconAnchor: [size / 2, size / 2],
+        popupAnchor: [0, -size / 2]
+      });
+    }
+
+    // 4. GeoJSON-Daten laden (Alle Daten einmalig in den Arbeitsspeicher einlesen)
+    async function loadGeoJsonData() {
+      try {
+        const response = await fetch("POIs_puffer2km.geojson");
+        if (!response.ok) throw new Error(`HTTP-Fehler: ${response.status}`);
+        const geojsonData = await response.json();
+
+        geojsonData.features.forEach((feature) => {
+          if (!feature.geometry || feature.geometry.type !== "Point") return;
+
+          const { lat, lon } = toWGS84(feature.geometry.coordinates);
+          const props = feature.properties || {};
+
+          const name = props.Name_ReprO || props.Name_Bestt || props.name || "Unbekannter POI";
+          const welterbe = props.Name_WeltE || "";
+          const ort = [props.PLZ, props.Ort].filter(Boolean).join(" ");
+          const typ = props.Typ || props.Art || "";
+          const homepage = props.Homepage
+            ? (props.Homepage.startsWith("http") ? props.Homepage : `https://${props.Homepage}`)
+            : null;
+
+          const poiObj = { name, welterbe, ort, typ, homepage, lat, lon, marker: null };
+          poiList.push(poiObj);
+        });
+
+        console.log(`${poiList.length} POIs erfolgreich geladen.`);
+
+      } catch (error) {
+        console.error("Fehler beim Laden der GeoJSON-Datei:", error);
+        document.getElementById("nearest-name-btn").textContent = "GeoJSON nicht geladen";
+        document.getElementById("nearest-meta").textContent = "Bitte lokalen Webserver starten.";
+      }
+    }
+
+    // Besucht-Status speichern
+    function setPoiVisited(poi, isVisited) {
+      const poiId = getPoiId(poi);
+      if (isVisited) {
+        visitedStore[poiId] = true;
+      } else {
+        delete visitedStore[poiId];
+      }
+      localStorage.setItem(STORAGE_KEY, JSON.stringify(visitedStore));
+
+      const isCurrentNearest = (currentNearestPoi && getPoiId(currentNearestPoi) === poiId);
+      if (poi.marker) {
+        poi.marker.setIcon(createPoiIcon(isCurrentNearest, isVisited));
+      }
+
+      if (isCurrentNearest) {
+        updatePanelVisitedState(isVisited);
+      }
+    }
+
+    function updatePanelVisitedState(isVisited) {
+      const nameBtn = document.getElementById("nearest-name-btn");
+      const checkbox = document.getElementById("nearest-visited-checkbox");
+      const badge = document.getElementById("visited-status-badge");
+
+      checkbox.checked = isVisited;
+      if (isVisited) {
+        nameBtn.classList.add("visited");
+        badge.style.display = "inline";
+      } else {
+        nameBtn.classList.remove("visited");
+        badge.style.display = "none";
+      }
+    }
+
+    // Funktion zum Erstellen des Popups für einen POI
+    function createPopupContent(poi) {
+      const poiId = getPoiId(poi);
+      const isVisited = !!visitedStore[poiId];
+
+      const popupContent = document.createElement("div");
+      popupContent.innerHTML = `
+        <div class="popup-title">${poi.name}</div>
+        ${poi.welterbe && poi.welterbe !== poi.name ? `<div class="popup-meta"><strong>Welterbe:</strong> ${poi.welterbe}</div>` : ""}
+        ${poi.ort ? `<div class="popup-meta"><strong>Ort:</strong> ${poi.ort}</div>` : ""}
+        ${poi.typ ? `<div class="popup-meta"><strong>Kategorie:</strong> ${poi.typ}</div>` : ""}
+        <div class="popup-actions">
+          ${poi.homepage ? `<a class="popup-link" href="${poi.homepage}" target="_blank" rel="noopener">Website öffnen &rarr;</a>` : ""}
+          <a class="map-nav-btn" href="https://www.google.com/maps/search/?api=1&query=${poi.lat},${poi.lon}" target="_blank" rel="noopener">In Google Maps öffnen &nearr;</a>
+          <label style="display: flex; align-items: center; gap: 6px; font-size: 0.8rem; margin-top: 4px; cursor: pointer;">
+            <input type="checkbox" class="popup-visited-cb" ${isVisited ? "checked" : ""} />
+            <span>Besucht</span>
+          </label>
+        </div>
+      `;
+
+      const cb = popupContent.querySelector(".popup-visited-cb");
+      cb.addEventListener("change", (e) => {
+        setPoiVisited(poi, e.target.checked);
+      });
+
+      return popupContent;
+    }
+
+    // Hauptfunktion: Aktualisiert Radar, Nächsten Punkt und rendert nur POIs im 8km-Radius
+    function updateNearestPOI(userLat, userLon) {
+      if (poiList.length === 0) return;
+
+      let closestPoi = null;
+      let minDistance = Infinity;
+
+      // 1. Nächsten Punkt im gesamten Array finden
+      for (const poi of poiList) {
+        const dist = calculateHaversineDistance(userLat, userLon, poi.lat, poi.lon);
+        if (dist < minDistance) {
+          minDistance = dist;
+          closestPoi = poi;
+        }
+      }
+
+      if (!closestPoi) return;
+      currentNearestPoi = closestPoi;
+
+      // 2. UI im Info-Panel füllen
+      const nameBtn = document.getElementById("nearest-name-btn");
+      nameBtn.textContent = closestPoi.name;
+
+      const subParts = [closestPoi.ort, closestPoi.typ].filter(Boolean);
+      document.getElementById("nearest-meta").textContent = subParts.length > 0 ? subParts.join(" • ") : "Tourismus-POI";
+      document.getElementById("nearest-distance").textContent = formatDistance(minDistance);
+
+      const isVisited = !!visitedStore[getPoiId(closestPoi)];
+      updatePanelVisitedState(isVisited);
+
+      // 3. PERFORMANCE-OPTIMIERUNG: Nur Punkte im Radius von 8 km auf der Karte rendern
+      activePoiLayer.clearLayers(); // Alte Marker im Radius löschen
+
+      poiList.forEach((poi) => {
+        const distToUser = calculateHaversineDistance(userLat, userLon, poi.lat, poi.lon);
+        
+        if (distToUser <= MAX_RENDER_RADIUS_METERS) {
+          const isThisNearest = (poi === closestPoi);
+          const poiVisited = !!visitedStore[getPoiId(poi)];
+
+          const marker = L.marker([poi.lat, poi.lon], { 
+            icon: createPoiIcon(isThisNearest, poiVisited) 
+          }).bindPopup(createPopupContent(poi));
+
+          poi.marker = marker;
+          activePoiLayer.addLayer(marker);
+
+          if (isThisNearest) {
+            currentNearestMarker = marker;
+          }
+        } else {
+          poi.marker = null; // Ausserhalb des Radius nicht im DOM halten
+        }
+      });
+
+      // Falls der allerneueste Punkt außerhalb des 8km-Radius liegen sollte (z.B. Test-Modus), sicherstellen, dass er trotzdem da ist:
+      if (!activePoiLayer.hasLayer(closestPoi.marker)) {
+        const nearestVisited = !!visitedStore[getPoiId(closestPoi)];
+        const marker = L.marker([closestPoi.lat, closestPoi.lon], { 
+          icon: createPoiIcon(true, nearestVisited) 
+        }).bindPopup(createPopupContent(closestPoi));
+        closestPoi.marker = marker;
+        activePoiLayer.addLayer(marker);
+        currentNearestMarker = marker;
+      }
+
+      // 4. Gestrichelte Linie zum nächsten Punkt zeichnen
+      if (nearestLine) map.removeLayer(nearestLine);
+      nearestLine = L.polyline(
+        [[userLat, userLon], [closestPoi.lat, closestPoi.lon]],
+        { color: "#CC79A7", weight: 2.5, dashArray: "6, 8", opacity: 0.85 }
+      ).addTo(map);
+    }
+
+    // Klick auf den Namen im Panel -> Smooth Zoom & Popup öffnen
+    document.getElementById("nearest-name-btn").addEventListener("click", () => {
+      if (!currentNearestPoi) return;
+      map.flyTo([currentNearestPoi.lat, currentNearestPoi.lon], 16, {
+        animate: true,
+        duration: 1.2
+      });
+      if (currentNearestPoi.marker) {
+        currentNearestPoi.marker.openPopup();
+      }
+    });
+
+    // Checkbox im Panel verknüpfen
+    document.getElementById("nearest-visited-checkbox").addEventListener("change", (e) => {
+      if (!currentNearestPoi) return;
+      setPoiVisited(currentNearestPoi, e.target.checked);
+    });
+
+    const locateControl = L.control.locate({
+      position: "topleft",
+      flyTo: true,
+      keepCurrentZoomLevel: false,
+      initialZoomLevel: 13,
+      watch: true,
+      enableHighAccuracy: true,
+      strings: { title: "Meinen Standort anzeigen" }
+    }).addTo(map);
+
+    map.on("locationfound", (e) => {
+      document.getElementById("gps-status").classList.add("active");
+      document.getElementById("gps-status-text").textContent = `GPS aktiv (±${Math.round(e.accuracy)} m)`;
+      updateNearestPOI(e.latlng.lat, e.latlng.lng);
+    });
+
+    map.on("locationerror", () => {
+      document.getElementById("gps-status").classList.remove("active");
+      document.getElementById("gps-status-text").textContent = "Kein GPS-Signal";
+    });
+
+    // Initialisierung starten: Erst Daten laden, dann GPS aktivieren
+    loadGeoJsonData().then(() => {
+      locateControl.start();
+    });
+  </script>
+</body>
+</html>
