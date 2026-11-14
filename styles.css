@@ -1,6 +1,5 @@
-
-    :root {
-      --primary: #1d4ed8;
+:root {
+      --primary: #56B4E9;
       --primary-light: #eff6ff;
       --accent: #0f172a;
       --text-main: #1e293b;
@@ -8,6 +7,7 @@
       --bg-panel: #ffffff;
       --border-color: #e2e8f0;
       --shadow: 0 -4px 20px rgba(15, 23, 42, 0.12);
+      --success: #F0E442;
     }
 
     * {
@@ -25,11 +25,10 @@
       overflow: hidden;
     }
 
-    /* Flex-Container für Vollbild-Karte oben + festes Info-Panel unten */
     .app-container {
       display: flex;
       flex-direction: column;
-      height: 100dvh; /* Dynamische Viewport-Höhe für mobile Browser */
+      height: 100dvh;
       width: 100%;
     }
 
@@ -49,7 +48,7 @@
       z-index: 1000;
       display: flex;
       flex-direction: column;
-      gap: 10px;
+      gap: 12px;
     }
 
     .panel-header {
@@ -102,18 +101,37 @@
     }
 
     .poi-details {
-      min-width: 0; /* Ermöglicht Text-Truncation */
+      min-width: 0;
       flex: 1;
     }
 
-    .poi-title {
+    /* Interaktiver Name im Panel */
+    .poi-title-btn {
+      background: none;
+      border: none;
       font-size: 1.15rem;
       font-weight: 700;
-      color: var(--accent);
+      color: var(--primary);
+      text-align: left;
+      cursor: pointer;
+      padding: 0;
       white-space: nowrap;
       overflow: hidden;
       text-overflow: ellipsis;
+      width: 100%;
+      display: block;
       margin-bottom: 2px;
+      transition: color 0.15s ease;
+    }
+
+    .poi-title-btn:hover {
+      color: #1e40af;
+      text-decoration: underline;
+    }
+
+    .poi-title-btn.visited {
+      text-decoration: line-through;
+      color: var(--text-muted);
     }
 
     .poi-subtitle {
@@ -150,7 +168,34 @@
       margin-top: 2px;
     }
 
-    /* Custom Marker Styling */
+    /* Checkbox Bereich im Panel */
+    .panel-footer-row {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      border-top: 1px solid var(--border-color);
+      padding-top: 8px;
+      font-size: 0.85rem;
+    }
+
+    .visited-checkbox-label {
+      display: inline-flex;
+      align-items: center;
+      gap: 8px;
+      cursor: pointer;
+      font-weight: 600;
+      color: var(--text-main);
+      user-select: none;
+    }
+
+    .visited-checkbox-label input[type="checkbox"] {
+      width: 16px;
+      height: 16px;
+      accent-color: var(--success);
+      cursor: pointer;
+    }
+
+    /* Marker Styling */
     .poi-marker-pin {
       background-color: var(--primary);
       border: 2.5px solid #ffffff;
@@ -160,40 +205,66 @@
     }
 
     .poi-marker-pin.nearest {
-      background-color: #dc2626;
-      transform: scale(1.35);
+      background-color: #CC79A7;
+      transform: scale(2.35);
       z-index: 999 !important;
     }
 
-    /* Popup Styling */
+    .poi-marker-pin.visited-marker {
+      background-color: var(--success);
+    }
+
+    /* Popup Banner Styling */
     .leaflet-popup-content {
       font-size: 0.9rem;
       line-height: 1.45;
       margin: 12px 14px;
+      min-width: 220px;
     }
     .popup-title {
       font-weight: 700;
-      font-size: 1rem;
+      font-size: 1.05rem;
       color: var(--accent);
-      margin-bottom: 4px;
+      margin-bottom: 6px;
     }
     .popup-meta {
       color: var(--text-muted);
       font-size: 0.82rem;
-      margin-bottom: 6px;
+      margin-bottom: 4px;
     }
-    .popup-link {
-      display: inline-block;
-      margin-top: 6px;
-      color: var(--primary);
+    .popup-actions {
+      display: flex;
+      flex-direction: column;
+      gap: 8px;
+      margin-top: 10px;
+      padding-top: 8px;
+      border-top: 1px solid var(--border-color);
+    }
+    .popup-link, .map-nav-btn {
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      gap: 6px;
+      background: #f1f5f9;
+      color: var(--text-main);
+      padding: 6px 10px;
+      border-radius: 8px;
+      font-size: 0.8rem;
       font-weight: 600;
       text-decoration: none;
+      transition: background 0.15s ease;
     }
-    .popup-link:hover {
-      text-decoration: underline;
+    .popup-link:hover, .map-nav-btn:hover {
+      background: #e2e8f0;
+    }
+    .map-nav-btn {
+      background: var(--primary-light);
+      color: var(--primary);
+    }
+    .map-nav-btn:hover {
+      background: #dbeafe;
     }
 
-    /* Desktop-Optimierung: Panel als schwebende Karte unten mittig */
     @media (min-width: 768px) {
       .info-panel {
         position: fixed;
@@ -206,9 +277,5 @@
         border: 1px solid var(--border-color);
         box-shadow: 0 10px 30px rgba(15, 23, 42, 0.16);
         padding: 18px 24px;
-      }
-
-      .poi-title {
-        font-size: 1.25rem;
       }
     }
