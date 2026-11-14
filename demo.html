@@ -3,7 +3,7 @@
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no" />
-  <title>Tourismus-Radar & POI-Verwaltung</title>
+  <title>Zugfenster</title>
 
   <!-- Leaflet CSS -->
   <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" crossorigin="" />
@@ -49,7 +49,7 @@
         <!-- Компактный селектор стороны -->
         <div style="display: flex; align-items: center; gap: 4px; font-size: 0.8rem;">
           <select id="side-selector" style="padding: 2px 4px; border-radius: 4px; border: 1px solid #ccc; font-size: 0.75rem; cursor: pointer;">
-            <option value="both">Beide</option>
+            <option value="both">Beide Seiten</option>
             <option value="right">Rechts</option>
             <option value="left">Links</option>
           </select>
@@ -69,7 +69,6 @@
           </label>
         </div>
 
-        <!-- Регулятор скорости до 300 км/ч -->
         <div style="margin-top: 6px; font-size: 0.8rem;">
           <div style="display: flex; justify-content: space-between; margin-bottom: 2px;">
             <span>Geschwindigkeit: <strong id="speed-value">100</strong> km/h</span>
@@ -139,7 +138,7 @@
     let lastUserLon = null;
 
     let activePoiLayer = L.layerGroup().addTo(map);
-    const MAX_RENDER_RADIUS_METERS = 6000; // 6 km Puffer
+    const MAX_RENDER_RADIUS_METERS = 10000; // 10 km Puffer
 
     function calculateHaversineDistance(lat1, lon1, lat2, lon2) {
       const R = 6371000;
@@ -240,10 +239,6 @@
         console.log(`Route RE 5 geladen: ${routeCoordinates.length} Punkte.`);
       } catch (error) {
         console.warn("Konnte wesel_coblenz_re5.geojson nicht laden. Verwende Fallback-Route.", error);
-        routeCoordinates = [
-          [51.6585, 6.6194], [51.55, 6.75], [51.43, 6.76], 
-          [51.22, 6.77], [50.93, 6.95], [50.73, 7.09], [50.35, 7.59]
-        ];
       }
     }
 
